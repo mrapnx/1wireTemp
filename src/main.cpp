@@ -6,12 +6,13 @@
 #include <PubSubClient.h>
 
 // *************** Deklaration der Funktionen
-void connectToWiFi();
-void connectToMQTT();
-void sendTemperatureToMQTT();
+boolean checkWiFi();
+boolean connectToMQTT();
+void sendTemperaturesToMQTT();
 void printSensorAddresses();
 void setup();
 void printWiFiStatus();
+void getTemperatures();
 String getTemperatureAsHtml();
 String deviceAddrToStr(DeviceAddress addr);
 
@@ -20,6 +21,7 @@ String deviceAddrToStr(DeviceAddress addr);
 // WLAN-Zugangsdaten
 char ssid[] = "Muspelheim";
 char pass[] = "dRN4wlan5309GTD9fR";
+const int wifiTimeout = 10; // Timeout zur Verbindung mit dem WLAN in Sek
 
 // MQTT-Zugangsdaten
 const char *mqttServer = "192.168.66.21";
@@ -31,7 +33,22 @@ const char *mqttPassword = "DEIN_MQTT_PASSWORT";
 // Pin, an dem der 1-Wire-Bus angeschlossen ist
 const int PinOneWireBus = 2; // = D2
 
+// Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
+const int wifiCheckInterval = 10;
+// Frequenz in Sekunden, in der die Temperaturen abgefragt werden
+const int tempCheckInterval = 10;
+// Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
+const int sendInterval = 10;
+// Frequenz, in der die orange LED bei Fehlern blinkt
+const int blinkInterval = 500; 
+
 // ***************  Globale Variablen
+unsigned long tempCheckLast = 0;
+unsigned long sendLast = 0;
+unsigned long wifiCheckLast = 0;
+unsigned long blinkLast = 0;
+boolean blinking = false;
+
 // 1-Wire
 byte addrArray[8];
 OneWire oneWire(PinOneWireBus);
@@ -59,6 +76,30 @@ String deviceAddrToStr(DeviceAddress addr) {
   return returnString;
 }
 
+void blink() {
+  if ((WiFi.status() == WL_CONNECTED) && (sensors.getDeviceCount() > 0)) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    return;
+  } else {
+    // Brich ab, wenn unser Inverall noch nicht erreicht ist
+    if (millis() < blinkLast + (blinkInterval * 1000)) {
+      return;
+    }
+    blinkLast = millis();
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+  }
+}
+
+void getTemperatures() {
+  // Brich ab, wenn unser Inverall noch nicht erreicht ist
+  if (millis() < tempCheckLast + (tempCheckInterval * 1000)) {
+    return;
+  }
+  tempCheckLast = millis();
+  // Aktualisiere die Temperaturdaten
+  sensors.requestTemperatures();
+}
+
 String getTemperatureAsHtml() {
   Serial.println("getTemperatureAsHtml() begin");
   String address;
@@ -81,9 +122,10 @@ void setup() {
   // Starte die serielle Kommunikation
   Serial.begin(9600);
   Serial.println("setup() begin");
+  pinMode(LED_BUILTIN, OUTPUT);
 
   // Verbinde mit dem WLAN
-  connectToWiFi();
+  checkWiFi();
 
   // Verbinde mit dem MQTT-Server
   connectToMQTT();
@@ -122,23 +164,38 @@ void printWiFiStatus() {
   Serial.println("printWiFiStatus() end");
 }
 
-void connectToWiFi() {
-  Serial.println("connectToWiFi() begin");
+boolean checkWiFi() {
+  // Ermittle den Zeitpunkt, bis zu dem der Verbindungsversuch dauern darf
+  unsigned int deadline = millis() + (wifiTimeout * 1000);
+
+  // Brich ab, wenn unser Inverall noch nicht erreicht ist
+  if (millis() < wifiCheckLast + (wifiCheckInterval * 1000)) {
+    return false;
+  }
+  wifiCheckLast = millis();
+
   Serial.println("Verbinde mit WLAN...");
   while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
     delay(1000);
     Serial.println("Verbindung wird hergestellt...");
+    if (millis() > deadline) {
+      break;
+    }
   }
-  Serial.println("Verbunden mit WLAN");
 
-  // Starte den Webserver
-  server.begin();
-
-  printWiFiStatus();
-  Serial.println("connectToWiFi() end");
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Verbunden mit WLAN");
+    // Starte den Webserver
+    server.begin();
+    printWiFiStatus();
+    return true;
+  } else  {
+    Serial.println("Verbindung mit WLAN fehlgeschlagen!");
+    return false;
+  } 
 }
 
-void connectToMQTT() {
+boolean connectToMQTT() {
   Serial.println("Verbinde mit MQTT-Server...");
   mqttClient.setServer(mqttServer, mqttPort);
   while (!mqttClient.connected()) {
@@ -147,28 +204,51 @@ void connectToMQTT() {
     } else {
       Serial.print("Fehlgeschlagen, rc=");
       Serial.print(mqttClient.state());
-      Serial.println(" Nächster Versuch in 5 Sekunden...");
-      delay(5000);
     }
   }
 }
 
-void sendTemperatureToMQTT() {
-  Serial.println("sendTemperatureToMQTT() begin");
+void sendTemperaturesToMQTT() {
   String topic = "n/a";
   String payload;
   DeviceAddress addr;
+
+  // Brich ab, wenn unser Inverall noch nicht erreicht ist
+  if (millis() < sendLast + (sendInterval * 1000)) {
+    return;
+  }
+  sendLast = millis();
+
+  // Wenn MQTT noch nicht verbunden ist
+  if (!mqttClient.connected()) {
+    // Versuche einen Verbindungsaufbau
+    if (!connectToMQTT()) {
+      // Wenn das fehlgeschlagen ist, brich ab
+      return;
+    }
+  }
+
+  // Fehlermeldung, wenn keine Sensoren gefunden wurden
+  if (sensors.getDeviceCount() <= 0) {
+    Serial.println("Keine Sensoren gefunden, deren Daten übermittelt werden könnten"); 
+  }
+
+  // Iteriere durch alle Sensoren
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
+    // Ermittle die Temperatur
     Serial.println("Ermittle temperatur sensor " + String(i));
     float tempC = sensors.getTempCByIndex(i);
+
+    // Ermittle die Adresse
     Serial.println("Ermittle adresse sensor " + String(i));
     sensors.getAddress(addr, i); 
+
+    // Und bilde die MQTT-Nachricht
     topic = "sensor/" + deviceAddrToStr(addr) + "/temperature";
     payload = String(tempC);
     Serial.println("topic: " + topic + " - payload: " + payload);
     mqttClient.publish(topic.c_str(), payload.c_str());
   }
-  Serial.println("sendTemperatureToMQTT() end");
 }
 
 void printSensorAddresses() {
@@ -269,13 +349,10 @@ void loop() {
     Serial.println("client disconnected");
   }
 
+  checkWiFi();
 
-  // Aktualisiere die Temperaturdaten
-  sensors.requestTemperatures();
+  getTemperatures();
 
-  // Sende die Temperaturdaten an den MQTT-Server
-  sendTemperatureToMQTT();
+  sendTemperaturesToMQTT();
 
-  // Verzögerung
-  delay(5000);
 }
