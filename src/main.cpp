@@ -6,6 +6,8 @@
 #include <PubSubClient.h>
 
 // *************** Deklaration der Funktionen
+boolean sensorsFine();
+boolean wifiFine();
 boolean checkWiFi();
 boolean connectToMQTT();
 void sendTemperaturesToMQTT();
@@ -39,7 +41,7 @@ const int wifiCheckInterval = 10;
 const int tempCheckInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
 const int sendInterval = 10;
-// Frequenz, in der die orange LED bei Fehlern blinkt
+// Frequenz, in der die orange LED bei Fehlern blinkt in ms
 const int blinkInterval = 500; 
 
 // ***************  Globale Variablen
@@ -65,6 +67,13 @@ PubSubClient mqttClient(wifiClient);
 
 // ***************  Funktionen
 
+boolean wifiFine() {
+  return WiFi.status() == WL_CONNECTED;
+}
+
+boolean sensorsFine() {
+ return sensors.getDeviceCount() > 0;
+}
 
 String deviceAddrToStr(DeviceAddress addr) {
   String returnString = "";
@@ -77,12 +86,12 @@ String deviceAddrToStr(DeviceAddress addr) {
 }
 
 void blink() {
-  if ((WiFi.status() == WL_CONNECTED) && (sensors.getDeviceCount() > 0)) {
+  if (wifiFine() && sensorsFine()) {
     digitalWrite(LED_BUILTIN, HIGH);
     return;
   } else {
     // Brich ab, wenn unser Inverall noch nicht erreicht ist
-    if (millis() < blinkLast + (blinkInterval * 1000)) {
+    if (millis() < blinkLast + (blinkInterval)) {
       return;
     }
     blinkLast = millis();
@@ -173,17 +182,25 @@ boolean checkWiFi() {
     return false;
   }
   wifiCheckLast = millis();
-
-  Serial.println("Verbinde mit WLAN...");
-  while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Verbindung wird hergestellt...");
-    if (millis() > deadline) {
-      break;
+ 
+  // Wenn WLAN nicht verbunden ist,
+  if (!wifiFine()) {
+    // versuch, die Verbindung aufzubauen
+    Serial.println("Verbinde mit WLAN...");
+    while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
+      delay(1000);
+      Serial.println("Verbindung wird hergestellt...");
+      if (millis() > deadline) {
+        break;
+      }
     }
-  }
+  } else {
+    // Wenn die Verbindung besteht, steig aus
+    return true;
+  } 
 
-  if (WiFi.status() == WL_CONNECTED) {
+  // Prüfe, ob nun eine Verbindung besteht
+  if (wifiFine()) {
     Serial.println("Verbunden mit WLAN");
     // Starte den Webserver
     server.begin();
@@ -196,14 +213,18 @@ boolean checkWiFi() {
 }
 
 boolean connectToMQTT() {
-  Serial.println("Verbinde mit MQTT-Server...");
+  if (!wifiFine()) {
+    Serial.println("connectToMQTT(): Keine WLAN-Verbindung, breche Verbindung mit MQTT-Server ab");
+    return false;
+  }
+  Serial.println("connectToMQTT(): Verbinde mit MQTT-Server...");
   mqttClient.setServer(mqttServer, mqttPort);
   while (!mqttClient.connected()) {
     if (mqttClient.connect(mqttName, mqttUser, mqttPassword)) {
-      Serial.println("Verbunden mit MQTT-Server");
+      Serial.println("connectToMQTT(): Verbunden mit MQTT-Server");
     } else {
-      Serial.print("Fehlgeschlagen, rc=");
-      Serial.print(mqttClient.state());
+      Serial.print("connectToMQTT(): Verbindung mit MQTT-Server fehlgeschlagen, rc=");
+      Serial.println(mqttClient.state());
     }
   }
 }
@@ -221,16 +242,18 @@ void sendTemperaturesToMQTT() {
 
   // Wenn MQTT noch nicht verbunden ist
   if (!mqttClient.connected()) {
+    Serial.println("sendTemperaturesToMQTT(): Keine Verbindung zum MQTT-Server, versuche Verbindungsaufbau");
     // Versuche einen Verbindungsaufbau
     if (!connectToMQTT()) {
       // Wenn das fehlgeschlagen ist, brich ab
+      Serial.println("sendTemperaturesToMQTT(): Verbindungsaufbau fehlgeschlagen, breche ab");
       return;
     }
   }
 
   // Fehlermeldung, wenn keine Sensoren gefunden wurden
   if (sensors.getDeviceCount() <= 0) {
-    Serial.println("Keine Sensoren gefunden, deren Daten übermittelt werden könnten"); 
+    Serial.println("sendTemperaturesToMQTT(): Keine Sensoren gefunden, deren Daten übermittelt werden könnten"); 
   }
 
   // Iteriere durch alle Sensoren
@@ -272,6 +295,14 @@ void printSensorAddresses() {
 }
 
 void loop() {
+  blink();
+
+  checkWiFi();
+
+  getTemperatures();
+
+  sendTemperaturesToMQTT();
+
   // Verarbeite HTTP-Anfragen
   WiFiClient client = server.available();
   if (client) {                             // if you get a client,
@@ -348,11 +379,5 @@ void loop() {
     client.stop();
     Serial.println("client disconnected");
   }
-
-  checkWiFi();
-
-  getTemperatures();
-
-  sendTemperaturesToMQTT();
 
 }
