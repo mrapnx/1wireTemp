@@ -4,6 +4,8 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
+#include <ssd1306.h>
+#include <ssd1306_console.h>
 
 // *************** Deklaration der Funktionen
 boolean sensorsFine();
@@ -33,7 +35,7 @@ const char *mqttUser = "ArudinoNano";
 const char *mqttPassword = "DEIN_MQTT_PASSWORT";
 
 // Pin, an dem der 1-Wire-Bus angeschlossen ist
-const int PinOneWireBus = 2; // = D2
+const int PinOneWireBus = 10; // = D10
 
 // Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
 const int wifiCheckInterval = 10;
@@ -107,6 +109,11 @@ void getTemperatures() {
   tempCheckLast = millis();
   // Aktualisiere die Temperaturdaten
   sensors.requestTemperatures();
+
+  
+  Serial.println("Gebe Text aus");
+  ssd1306_print( "This is console output: " );
+  ssd1306_print( "go to the next line\n" );
 }
 
 String getTemperatureAsHtml() {
@@ -132,6 +139,18 @@ void setup() {
   Serial.begin(9600);
   Serial.println("setup() begin");
   pinMode(LED_BUILTIN, OUTPUT);
+
+
+  // Display
+  Serial.println("setup() Initialisiere Display");
+  il9163_128x128_spi_init(2, 3, 13);  // rstPin, cesPin, dcPin
+  Serial.println("setup() Clear Screen");
+  ssd1306_clearScreen();
+  Serial.println("setup() setMode");
+  ssd1306_setMode( LCD_MODE_NORMAL );
+  Serial.println("setup() setFixedFont");
+  /* Set font to use with console */
+  ssd1306_setFixedFont(ssd1306xled_font6x8);
 
   // Verbinde mit dem WLAN
   checkWiFi();
