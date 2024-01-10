@@ -4,8 +4,35 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
-#include <ssd1306.h>
-#include <ssd1306_console.h>
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <TFT_ILI9163C.h>
+//#include <ssd1306.h>
+//#include <ssd1306_console.h>
+/*
+ * Display Config
+ */
+//           LED
+//           SCK  => D13, keine Ahnung, wo das konfiguriert wird
+//           SDA  => D11, keine Ahnung, wo das konfiguriert wird
+int8_t     DiA0   =  5;
+int8_t     DiRES  =  3;
+int8_t     DiCS   =  4;
+
+int8_t     DiBUS  = -1;  // Nur notwendig für Linux und ESP32
+uint32_t   DiFREQ =  0;  // Frequenz in Hz, mit der das Display betrieben wird; 0 = Default
+int8_t     DiCLK  = -1;  // Nur notwendig für ESP32
+int8_t     DiMOSI = -1;  // Nur notwendig für ESP32
+
+// Display
+#define TFT_CLK  13   // Gelb  SCK   D13
+#define TFT_MOSI 11   // Braun SDA   D11
+#define TFT_DC   4    // Grün  A0    D5
+#define TFT_RST  3    // Lila  RES   D2
+#define TFT_CS   5    // Blau  CS    D3
+
+#define TFT_MISO 12   //   - D12
+TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS, TFT_DC, TFT_RST);
 
 // *************** Deklaration der Funktionen
 boolean sensorsFine();
@@ -16,7 +43,10 @@ void sendTemperaturesToMQTT();
 void printSensorAddresses();
 void setup();
 void printWiFiStatus();
+void setup1Wire(); 
 void getTemperatures();
+void setupDisplay();
+unsigned long testText();
 String getTemperatureAsHtml();
 String deviceAddrToStr(DeviceAddress addr);
 
@@ -69,6 +99,64 @@ PubSubClient mqttClient(wifiClient);
 
 // ***************  Funktionen
 
+void setupDisplay() {
+  Serial.println("setup() Initialisiere Display");
+ 
+  /*
+    tft.begin();
+    tft.setRotation(1);
+      uint8_t x = tft.readcommand8(ILI9341_RDMODE);
+  Serial.print("Display Power Mode: 0x"); Serial.println(x, HEX);
+  x = tft.readcommand8(ILI9341_RDMADCTL);
+  Serial.print("MADCTL Mode: 0x"); Serial.println(x, HEX);
+  x = tft.readcommand8(ILI9341_RDPIXFMT);
+  Serial.print("Pixel Format: 0x"); Serial.println(x, HEX);
+  x = tft.readcommand8(ILI9341_RDIMGFMT);
+  Serial.print("Image Format: 0x"); Serial.println(x, HEX);
+  x = tft.readcommand8(ILI9341_RDSELFDIAG);
+  Serial.print("Self Diagnostic: 0x"); Serial.println(x, HEX); 
+
+  */
+
+
+  /*
+  Serial.println("setup() setFixedFont");
+  ssd1306_setFixedFont(ssd1306xled_font6x8);
+   Serial.println("setup() spi_init");
+  il9163_128x128_spi_init(TFT_RST, TFT_CS, TFT_DC);  // rstPin, cesPin, dcPin
+  // il9163_128x128_spi_init(3, 4, 5); 
+  */
+
+  
+                                       // RST    BUS    CS    DC    FREQ    CLK    MOSI
+  // DisplayIL9163_128x128x16_SPI display(DiRES,{DiBUS, DiCS, DiA0, DiFREQ, DiCLK, DiMOSI}); // Use this line for Atmega328p
+
+  /*
+  Serial.println("setup() Clear Screen");
+  ssd1306_clearScreen();
+  Serial.println("setup() setMode");
+  ssd1306_setMode( LCD_MODE_NORMAL );
+*/
+ 
+  tft.begin();
+  //tft.setBitrate(24000000);
+
+  uint16_t time = millis();
+  time = millis() - time;
+
+  tft.clearScreen();
+  //tft.defineScrollArea(128, 128);
+  tft.setCursor(0, 0);
+  tft.print("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur adipiscing ante sed nibh tincidunt feugiat. Maecenas enim massa");
+
+
+}
+
+unsigned long testText() {
+
+  
+}
+
 boolean wifiFine() {
   return WiFi.status() == WL_CONNECTED;
 }
@@ -106,14 +194,29 @@ void getTemperatures() {
   if (millis() < tempCheckLast + (tempCheckInterval * 1000)) {
     return;
   }
+
+ testText();
   tempCheckLast = millis();
   // Aktualisiere die Temperaturdaten
   sensors.requestTemperatures();
+}
 
-  
-  Serial.println("Gebe Text aus");
-  ssd1306_print( "This is console output: " );
-  ssd1306_print( "go to the next line\n" );
+void setup1Wire() {
+    // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
+  if (oneWire.search(addrArray)) {
+    Serial.print("Geräte gefunden: ");
+    // Serial.println(addrArray);
+  } else {
+    Serial.println("Keine Geräte gefunden");
+  }
+
+
+  // Suche nach angeschlossenen Sensoren
+  sensors.begin();
+
+  Serial.println("Gefundene 1-Wire-Sensoren:");
+  printSensorAddresses();
+  Serial.println("setup() end");
 }
 
 String getTemperatureAsHtml() {
@@ -137,42 +240,21 @@ String getTemperatureAsHtml() {
 void setup() {
   // Starte die serielle Kommunikation
   Serial.begin(9600);
+  delay(1000);
   Serial.println("setup() begin");
   pinMode(LED_BUILTIN, OUTPUT);
 
 
   // Display
-  Serial.println("setup() Initialisiere Display");
-  il9163_128x128_spi_init(2, 3, 13);  // rstPin, cesPin, dcPin
-  Serial.println("setup() Clear Screen");
-  ssd1306_clearScreen();
-  Serial.println("setup() setMode");
-  ssd1306_setMode( LCD_MODE_NORMAL );
-  Serial.println("setup() setFixedFont");
-  /* Set font to use with console */
-  ssd1306_setFixedFont(ssd1306xled_font6x8);
+  setupDisplay();
 
   // Verbinde mit dem WLAN
-  checkWiFi();
+  // checkWiFi();
 
   // Verbinde mit dem MQTT-Server
-  connectToMQTT();
+  // connectToMQTT();
 
-  // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
-  if (oneWire.search(addrArray)) {
-    Serial.print("Geräte gefunden: ");
-    // Serial.println(addrArray);
-  } else {
-    Serial.println("Keine Geräte gefunden");
-  }
-
-
-  // Suche nach angeschlossenen Sensoren
-  sensors.begin();
-
-  Serial.println("Gefundene 1-Wire-Sensoren:");
-  printSensorAddresses();
-  Serial.println("setup() end");
+  setup1Wire();
 }
 
 void printWiFiStatus() {
