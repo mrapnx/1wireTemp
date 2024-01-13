@@ -5,33 +5,19 @@
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
 #include <SPI.h>
-#include <Adafruit_GFX.h>
-#include <TFT_ILI9163C.h>
-//#include <ssd1306.h>
-//#include <ssd1306_console.h>
-/*
- * Display Config
- */
-//           LED
-//           SCK  => D13, keine Ahnung, wo das konfiguriert wird
-//           SDA  => D11, keine Ahnung, wo das konfiguriert wird
-int8_t     DiA0   =  5;
-int8_t     DiRES  =  3;
-int8_t     DiCS   =  4;
+#include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
 
-int8_t     DiBUS  = -1;  // Nur notwendig für Linux und ESP32
-uint32_t   DiFREQ =  0;  // Frequenz in Hz, mit der das Display betrieben wird; 0 = Default
-int8_t     DiCLK  = -1;  // Nur notwendig für ESP32
-int8_t     DiMOSI = -1;  // Nur notwendig für ESP32
-
-// Display
+// *************** Display
+                      // Rot   LED   +3.3V
 #define TFT_CLK  13   // Gelb  SCK   D13
 #define TFT_MOSI 11   // Braun SDA   D11
 #define TFT_DC   4    // Grün  A0    D5
 #define TFT_RST  3    // Lila  RES   D2
 #define TFT_CS   5    // Blau  CS    D3
-
+                      // Schw. GND   GND
+                      // Rot   VCC   +3.3V                     
 #define TFT_MISO 12   //   - D12
+
 TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS, TFT_DC, TFT_RST);
 
 // *************** Deklaration der Funktionen
@@ -46,7 +32,6 @@ void printWiFiStatus();
 void setup1Wire(); 
 void getTemperatures();
 void setupDisplay();
-unsigned long testText();
 String getTemperatureAsHtml();
 String deviceAddrToStr(DeviceAddress addr);
 
@@ -101,43 +86,7 @@ PubSubClient mqttClient(wifiClient);
 
 void setupDisplay() {
   Serial.println("setup() Initialisiere Display");
- 
-  /*
-    tft.begin();
-    tft.setRotation(1);
-      uint8_t x = tft.readcommand8(ILI9341_RDMODE);
-  Serial.print("Display Power Mode: 0x"); Serial.println(x, HEX);
-  x = tft.readcommand8(ILI9341_RDMADCTL);
-  Serial.print("MADCTL Mode: 0x"); Serial.println(x, HEX);
-  x = tft.readcommand8(ILI9341_RDPIXFMT);
-  Serial.print("Pixel Format: 0x"); Serial.println(x, HEX);
-  x = tft.readcommand8(ILI9341_RDIMGFMT);
-  Serial.print("Image Format: 0x"); Serial.println(x, HEX);
-  x = tft.readcommand8(ILI9341_RDSELFDIAG);
-  Serial.print("Self Diagnostic: 0x"); Serial.println(x, HEX); 
 
-  */
-
-
-  /*
-  Serial.println("setup() setFixedFont");
-  ssd1306_setFixedFont(ssd1306xled_font6x8);
-   Serial.println("setup() spi_init");
-  il9163_128x128_spi_init(TFT_RST, TFT_CS, TFT_DC);  // rstPin, cesPin, dcPin
-  // il9163_128x128_spi_init(3, 4, 5); 
-  */
-
-  
-                                       // RST    BUS    CS    DC    FREQ    CLK    MOSI
-  // DisplayIL9163_128x128x16_SPI display(DiRES,{DiBUS, DiCS, DiA0, DiFREQ, DiCLK, DiMOSI}); // Use this line for Atmega328p
-
-  /*
-  Serial.println("setup() Clear Screen");
-  ssd1306_clearScreen();
-  Serial.println("setup() setMode");
-  ssd1306_setMode( LCD_MODE_NORMAL );
-*/
- 
   tft.begin();
   //tft.setBitrate(24000000);
 
@@ -145,16 +94,11 @@ void setupDisplay() {
   time = millis() - time;
 
   tft.clearScreen();
-  //tft.defineScrollArea(128, 128);
+  tft.defineScrollArea(128, 128);
   tft.setCursor(0, 0);
-  tft.print("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur adipiscing ante sed nibh tincidunt feugiat. Maecenas enim massa");
+  tft.println("Start");
 
 
-}
-
-unsigned long testText() {
-
-  
 }
 
 boolean wifiFine() {
@@ -195,7 +139,6 @@ void getTemperatures() {
     return;
   }
 
- testText();
   tempCheckLast = millis();
   // Aktualisiere die Temperaturdaten
   sensors.requestTemperatures();
@@ -204,9 +147,8 @@ void getTemperatures() {
 void setup1Wire() {
     // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
   if (oneWire.search(addrArray)) {
-    Serial.print("Geräte gefunden: ");
-    // Serial.println(addrArray);
   } else {
+    tft.println("Keine Geräte gefunden");
     Serial.println("Keine Geräte gefunden");
   }
 
@@ -215,8 +157,8 @@ void setup1Wire() {
   sensors.begin();
 
   Serial.println("Gefundene 1-Wire-Sensoren:");
+  tft.println("Gefundene 1-Wire-Sensoren:");
   printSensorAddresses();
-  Serial.println("setup() end");
 }
 
 String getTemperatureAsHtml() {
@@ -371,6 +313,9 @@ void sendTemperaturesToMQTT() {
     topic = "sensor/" + deviceAddrToStr(addr) + "/temperature";
     payload = String(tempC);
     Serial.println("topic: " + topic + " - payload: " + payload);
+    tft.clearScreen();
+    tft.setCursor(0, 0);
+    tft.print(deviceAddrToStr(addr) + ": " + payload);
     mqttClient.publish(topic.c_str(), payload.c_str());
   }
 }
@@ -378,6 +323,8 @@ void sendTemperaturesToMQTT() {
 void printSensorAddresses() {
   Serial.print("Anzahl: ");
   Serial.println(sensors.getDeviceCount());
+  tft.print("Anzahl: ");
+  tft.println(sensors.getDeviceCount());
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
     DeviceAddress tempAddress;
     sensors.getAddress(tempAddress, i);
@@ -386,12 +333,18 @@ void printSensorAddresses() {
     Serial.print(i + 1);
     Serial.print(" Adresse: ");
 
+    tft.print("Sensor ");
+    tft.print(i + 1);
+    tft.print(" Adresse: ");
+
     for (uint8_t j = 0; j < 8; j++) {
       if (tempAddress[j] < 16) Serial.print("0");
       Serial.print(tempAddress[j], HEX);
+      tft.print(tempAddress[j], HEX);
     }
 
     Serial.println();
+    tft.println();
   }
 }
 
