@@ -7,7 +7,9 @@
 #include <SPI.h>
 #include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
 
-// *************** Display
+// *************** Konfig
+
+// Display
                       // Rot   LED   +3.3V
 #define TFT_CLK  13   // Gelb  SCK   D13
 #define TFT_MOSI 11   // Braun SDA   D11
@@ -17,25 +19,6 @@
                       // Schw. GND   GND
                       // Rot   VCC   +3.3V                     
 #define TFT_MISO 12   //   - D12
-
-TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS, TFT_DC, TFT_RST);
-
-// *************** Deklaration der Funktionen
-boolean sensorsFine();
-boolean wifiFine();
-boolean checkWiFi();
-boolean connectToMQTT();
-void sendTemperaturesToMQTT();
-void printSensorAddresses();
-void setup();
-void printWiFiStatus();
-void setup1Wire(); 
-void getTemperatures();
-void setupDisplay();
-String getTemperatureAsHtml();
-String deviceAddrToStr(DeviceAddress addr);
-
-// *************** Konfig
 
 // WLAN-Zugangsdaten
 char ssid[] = "Muspelheim";
@@ -81,6 +64,23 @@ WiFiServer server(80);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
+// Display
+TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS, TFT_DC, TFT_RST);
+
+// *************** Deklaration der Funktionen
+boolean sensorsFine();
+boolean wifiFine();
+boolean checkWiFi();
+boolean connectToMQTT();
+void sendTemperaturesToMQTT();
+void printSensorAddresses();
+void setup();
+void printWiFiStatus();
+void setup1Wire(); 
+void getTemperatures();
+void setupDisplay();
+String getTemperatureAsHtml();
+String deviceAddrToStr(DeviceAddress addr);
 
 // ***************  Funktionen
 
@@ -88,17 +88,11 @@ void setupDisplay() {
   Serial.println("setup() Initialisiere Display");
 
   tft.begin();
-  //tft.setBitrate(24000000);
-
-  uint16_t time = millis();
-  time = millis() - time;
-
+  tft.setBitrate(24000000);
   tft.clearScreen();
   tft.defineScrollArea(128, 128);
   tft.setCursor(0, 0);
   tft.println("Start");
-
-
 }
 
 boolean wifiFine() {
