@@ -4,21 +4,21 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
-
-// *************** Deklaration der Funktionen
-boolean sensorsFine();
-boolean wifiFine();
-boolean checkWiFi();
-boolean connectToMQTT();
-void sendTemperaturesToMQTT();
-void printSensorAddresses();
-void setup();
-void printWiFiStatus();
-void getTemperatures();
-String getTemperatureAsHtml();
-String deviceAddrToStr(DeviceAddress addr);
+#include <SPI.h>
+#include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
 
 // *************** Konfig
+
+// Display
+                      // Rot   LED   +3.3V
+#define TFT_CLK  13   // Gelb  SCK   D13
+#define TFT_MOSI 11   // Braun SDA   D11
+#define TFT_DC   4    // Grün  A0    D5
+#define TFT_RST  3    // Lila  RES   D2
+#define TFT_CS   5    // Blau  CS    D3
+                      // Schw. GND   GND
+                      // Rot   VCC   +3.3V                     
+#define TFT_MISO 12   //   - D12
 
 // WLAN-Zugangsdaten
 char ssid[] = "Muspelheim";
@@ -33,7 +33,7 @@ const char *mqttUser = "ArudinoNano";
 const char *mqttPassword = "DEIN_MQTT_PASSWORT";
 
 // Pin, an dem der 1-Wire-Bus angeschlossen ist
-const int PinOneWireBus = 2; // = D2
+const int PinOneWireBus = 10; // = D10
 
 // Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
 const int wifiCheckInterval = 10;
@@ -64,8 +64,36 @@ WiFiServer server(80);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
+// Display
+TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS, TFT_DC, TFT_RST);
+
+// *************** Deklaration der Funktionen
+boolean sensorsFine();
+boolean wifiFine();
+boolean checkWiFi();
+boolean connectToMQTT();
+void sendTemperaturesToMQTT();
+void printSensorAddresses();
+void setup();
+void printWiFiStatus();
+void setup1Wire(); 
+void getTemperatures();
+void setupDisplay();
+String getTemperatureAsHtml();
+String deviceAddrToStr(DeviceAddress addr);
 
 // ***************  Funktionen
+
+void setupDisplay() {
+  Serial.println("setup() Initialisiere Display");
+
+  tft.begin();
+  tft.setBitrate(24000000);
+  tft.clearScreen();
+  tft.defineScrollArea(128, 128);
+  tft.setCursor(0, 0);
+  tft.println("Start");
+}
 
 boolean wifiFine() {
   return WiFi.status() == WL_CONNECTED;
@@ -104,9 +132,27 @@ void getTemperatures() {
   if (millis() < tempCheckLast + (tempCheckInterval * 1000)) {
     return;
   }
+
   tempCheckLast = millis();
   // Aktualisiere die Temperaturdaten
   sensors.requestTemperatures();
+}
+
+void setup1Wire() {
+    // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
+  if (oneWire.search(addrArray)) {
+  } else {
+    tft.println("Keine Geräte gefunden");
+    Serial.println("Keine Geräte gefunden");
+  }
+
+
+  // Suche nach angeschlossenen Sensoren
+  sensors.begin();
+
+  Serial.println("Gefundene 1-Wire-Sensoren:");
+  tft.println("Gefundene 1-Wire-Sensoren:");
+  printSensorAddresses();
 }
 
 String getTemperatureAsHtml() {
@@ -130,30 +176,21 @@ String getTemperatureAsHtml() {
 void setup() {
   // Starte die serielle Kommunikation
   Serial.begin(9600);
+  delay(1000);
   Serial.println("setup() begin");
   pinMode(LED_BUILTIN, OUTPUT);
 
+
+  // Display
+  setupDisplay();
+
   // Verbinde mit dem WLAN
-  checkWiFi();
+  // checkWiFi();
 
   // Verbinde mit dem MQTT-Server
-  connectToMQTT();
+  // connectToMQTT();
 
-  // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
-  if (oneWire.search(addrArray)) {
-    Serial.print("Geräte gefunden: ");
-    // Serial.println(addrArray);
-  } else {
-    Serial.println("Keine Geräte gefunden");
-  }
-
-
-  // Suche nach angeschlossenen Sensoren
-  sensors.begin();
-
-  Serial.println("Gefundene 1-Wire-Sensoren:");
-  printSensorAddresses();
-  Serial.println("setup() end");
+  setup1Wire();
 }
 
 void printWiFiStatus() {
@@ -270,6 +307,9 @@ void sendTemperaturesToMQTT() {
     topic = "sensor/" + deviceAddrToStr(addr) + "/temperature";
     payload = String(tempC);
     Serial.println("topic: " + topic + " - payload: " + payload);
+    tft.clearScreen();
+    tft.setCursor(0, 0);
+    tft.print(deviceAddrToStr(addr) + ": " + payload);
     mqttClient.publish(topic.c_str(), payload.c_str());
   }
 }
@@ -277,6 +317,8 @@ void sendTemperaturesToMQTT() {
 void printSensorAddresses() {
   Serial.print("Anzahl: ");
   Serial.println(sensors.getDeviceCount());
+  tft.print("Anzahl: ");
+  tft.println(sensors.getDeviceCount());
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
     DeviceAddress tempAddress;
     sensors.getAddress(tempAddress, i);
@@ -285,12 +327,18 @@ void printSensorAddresses() {
     Serial.print(i + 1);
     Serial.print(" Adresse: ");
 
+    tft.print("Sensor ");
+    tft.print(i + 1);
+    tft.print(" Adresse: ");
+
     for (uint8_t j = 0; j < 8; j++) {
       if (tempAddress[j] < 16) Serial.print("0");
       Serial.print(tempAddress[j], HEX);
+      tft.print(tempAddress[j], HEX);
     }
 
     Serial.println();
+    tft.println();
   }
 }
 
