@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <avr/dtostrf.h>
 #include <Wire.h>
 #include <WiFiNINA.h>
 #include <OneWire.h>
@@ -6,8 +7,15 @@
 #include <PubSubClient.h>
 #include <SPI.h>
 #include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
+#include "sensors.h"
 
 // *************** Konfig
+
+// Einstellungen
+boolean wifiActive = false;
+boolean mqttActive = false;
+int     xBegin     = 0;
+int     yBegin     = 10;
 
 // Display
                       // Rot   LED   +3.3V
@@ -24,6 +32,7 @@
 char ssid[] = "Muspelheim";
 char pass[] = "dRN4wlan5309GTD9fR";
 const int wifiTimeout = 10; // Timeout zur Verbindung mit dem WLAN in Sek
+const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 
 // MQTT-Zugangsdaten
 const char *mqttServer = "192.168.66.21";
@@ -41,27 +50,32 @@ const int wifiCheckInterval = 10;
 const int tempCheckInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
 const int sendInterval = 10;
+// Frequenz in Sekunden, in der die Temperaturen angezeigt werden
+const int displayInterval = 1;
 // Frequenz, in der die orange LED bei Fehlern blinkt in ms
 const int blinkInterval = 500; 
 
 // ***************  Globale Variablen
 unsigned long tempCheckLast = 0;
 unsigned long sendLast = 0;
+unsigned long displayLast = 0;
 unsigned long wifiCheckLast = 0;
 unsigned long blinkLast = 0;
 boolean blinking = false;
 
 // 1-Wire
+SensorData* sensorList = nullptr;  // Zeiger auf das Array von SensorData
+int numberOfSensors = 0; // Aktuelle Anzahl von Sensoren
 byte addrArray[8];
 OneWire oneWire(PinOneWireBus);
 DallasTemperature sensors(&oneWire);
 
 // Webserver
 IPAddress   ip; 
-WiFiServer server(80);
+WiFiServer  server(wifiPort);
 
 // MQTT-Client
-WiFiClient wifiClient;
+WiFiClient   wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 // Display
@@ -72,17 +86,130 @@ boolean sensorsFine();
 boolean wifiFine();
 boolean checkWiFi();
 boolean connectToMQTT();
+
+// Sensorlisten-Methoden
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value);
+void removeSensor(SensorAddress address);
+boolean updateSensorValue(const SensorAddress address, const float value);
+void clearSensorList();
+void getSensorName(const SensorAddress address, SensorName); 
+
+// Ein- & Ausgabe-Methoden
+void outputSensors();
+void getTemperatures();
+void displayTemperatures(); 
+String getTemperatureAsHtml();
 void sendTemperaturesToMQTT();
 void printSensorAddresses();
-void setup();
 void printWiFiStatus();
+
+//  Setup-Methoden
 void setup1Wire(); 
-void getTemperatures();
 void setupDisplay();
-String getTemperatureAsHtml();
-String deviceAddrToStr(DeviceAddress addr);
+void setup();
 
 // ***************  Funktionen
+void clearSensorList() {
+  // Befreie den Speicher von sensorList
+  free(sensorList);
+
+  // Setze die Anzahl der Sensoren auf 0
+  numberOfSensors = 0;
+
+  // Setze den Zeiger auf null, um sicherzustellen, dass er nicht auf ungültigen Speicher zeigt
+  sensorList = nullptr;
+}
+
+void outputSensors() {
+  Serial.println("Anzahl Sensoren im Array: " + String(numberOfSensors));
+  for (int i = 0; i < numberOfSensors; i++) {
+    Serial.print("Sensor " + String(i) + " Adresse: ");
+    Serial.print(sensorList[i].address);
+    Serial.print(" Name: ");
+    Serial.print(sensorList[i].name);
+    Serial.print(" Typ: ");
+    Serial.print(sensorList[i].type);
+    Serial.print(" Wert: ");
+    Serial.println(sensorList[i].value);
+  }
+}
+
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value) {
+  Serial.println("addSensor(): begin");
+
+  SensorData* tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
+
+  // Übertrage vorhandene Daten in das temporäre Array
+  for (int i = 0; i < numberOfSensors; i++) {
+    tempArray[i] = sensorList[i];
+  }
+
+  // Füge das neue Sensorobjekt hinzu
+  //tempArray[numberOfSensors] = {*address, *name, *type, value};
+  strcpy(tempArray[numberOfSensors].address, address);
+  strcpy(tempArray[numberOfSensors].name, name);
+  tempArray[numberOfSensors].type = type;
+  tempArray[numberOfSensors].value = value;
+
+  // Erhöhe die Anzahl der Sensoren
+  numberOfSensors++;
+
+  // Befreie den alten Speicher
+  free(sensorList);
+
+  // Weise den neuen Speicher zu
+  sensorList = tempArray;
+
+  Serial.println("addSensor(): end");
+}
+
+boolean updateSensorValue(const SensorAddress address, const float value) {
+   for (int i = 0; i < numberOfSensors; i++) {
+     if (strcmp(sensorList[i].address, address) == 0) {
+       sensorList[i].value = value;
+       return true; 
+     }
+   }
+   return false;
+}
+
+
+void getSensorName(const SensorAddress address, SensorName name) {
+  // TODO: Dummy Funktion
+  strcpy(name, address);
+  strcat(name, ".");
+}
+
+void removeSensor(SensorAddress address) {
+  for (int i = 0; i < numberOfSensors; i++) {
+    if (sensorList[i].address == address) {
+      // Sensor gefunden, löschen, indem die nachfolgenden Elemente verschoben werden
+      for (int j = i; j < numberOfSensors - 1; j++) {
+        sensorList[j] = sensorList[j + 1];
+      }
+
+      // Verringere die Anzahl der Sensoren
+      numberOfSensors--;
+
+      // Reduziere die Speichergröße
+      SensorData* tempArray = (SensorData*)malloc(numberOfSensors * sizeof(SensorData));
+
+      // Übertrage Daten in das temporäre Array
+      for (int k = 0; k < numberOfSensors; k++) {
+        tempArray[k] = sensorList[k];
+      }
+
+      // Befreie den alten Speicher
+      free(sensorList);
+
+      // Weise den neuen Speicher zu
+      sensorList = tempArray;
+
+      break;
+    }
+  }
+}
+
 
 void setupDisplay() {
   Serial.println("setup() Initialisiere Display");
@@ -91,7 +218,7 @@ void setupDisplay() {
   tft.setBitrate(24000000);
   tft.clearScreen();
   tft.defineScrollArea(128, 128);
-  tft.setCursor(0, 0);
+  tft.setCursor(xBegin, yBegin);
   tft.println("Start");
 }
 
@@ -103,15 +230,8 @@ boolean sensorsFine() {
  return sensors.getDeviceCount() > 0;
 }
 
-String deviceAddrToStr(DeviceAddress addr) {
-  String returnString = "";
-    for (uint8_t j = 0; j < 8; j++) {
-      if (addr[j] < 16) returnString = "0";
-      returnString = returnString + String(addr[j], HEX);
-    }
-  returnString.toUpperCase();
-  return returnString;
-}
+
+
 
 void blink() {
   if (wifiFine() && sensorsFine()) {
@@ -128,17 +248,48 @@ void blink() {
 }
 
 void getTemperatures() {
+float value;
+String address;
+SensorAddress addressC;
+DeviceAddress addr;
+
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < tempCheckLast + (tempCheckInterval * 1000)) {
     return;
   }
-
+  Serial.println("getTemperatures() begin");
   tempCheckLast = millis();
+
   // Aktualisiere die Temperaturdaten
+  Serial.println("getTemperatures() Aktualisiere Temperaturen");
   sensors.requestTemperatures();
+
+  // Iteriere durch alle Sensoren
+  for (int i = 0; i < sensors.getDeviceCount(); i++) {
+    // Ermittle die Adresse
+    sensors.getAddress(addr, i); 
+    address = deviceAddrToStr(addr);
+    strcpy (addressC, address.c_str());
+
+    // Ermittle die Temperatur
+    value = sensors.getTempCByIndex(i);
+
+    // Aktualisiere die Liste
+    updateSensorValue(addressC, value);
+    
+  }  
+
+  Serial.println("getTemperatures() end");
 }
 
 void setup1Wire() {
+float value;
+String address;
+SensorAddress addressC;
+SensorName nameC;
+SensorType typeC;
+DeviceAddress addr;
+
     // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
   if (oneWire.search(addrArray)) {
   } else {
@@ -150,9 +301,49 @@ void setup1Wire() {
   // Suche nach angeschlossenen Sensoren
   sensors.begin();
 
+  // Leere die Liste
+  clearSensorList();
+
   Serial.println("Gefundene 1-Wire-Sensoren:");
   tft.println("Gefundene 1-Wire-Sensoren:");
   printSensorAddresses();
+
+  // Iteriere durch alle Sensoren
+  for (int i = 0; i < sensors.getDeviceCount(); i++) {
+    // Ermittle die Temperatur
+    Serial.println("Ermittle Temperatur Sensor " + String(i));
+    value = sensors.getTempCByIndex(i);
+    Serial.print("Temperatur Sensor " + String(i) + ": ");
+    Serial.println(value);
+
+    // Ermittle die Adresse
+    Serial.println("Ermittle Adresse Sensor " + String(i));
+    sensors.getAddress(addr, i); 
+    address = deviceAddrToStr(addr);
+    strcpy (addressC, address.c_str());
+    Serial.println("address: " + address);
+    Serial.print("addressC: ");
+    Serial.println(addressC);
+
+    // Ermittle den Namen
+    Serial.println("Ermittle Name Sensor " + String(i));
+    getSensorName(addressC, nameC);
+    Serial.print("Name Sensor " + String(i) + ": ");
+    Serial.println(nameC);
+
+    // Ermittle den Typ
+    Serial.println("Ermittle Typ Sensor " + String(i));
+    if (getSensorType(addressC, typeC) == true) {
+      Serial.println("Typ erfolgreich ermittelt");
+    } else {
+      Serial.println("Typ nicht erfolgreich ermittelt");
+    }
+    Serial.print("Typ Sensor " + String(i) + ": ");
+    Serial.println(typeC);
+
+    addSensor(addressC, nameC, typeC, value);
+  }  
+  outputSensors();
 }
 
 String getTemperatureAsHtml() {
@@ -185,12 +376,19 @@ void setup() {
   setupDisplay();
 
   // Verbinde mit dem WLAN
-  // checkWiFi();
+  checkWiFi();
 
   // Verbinde mit dem MQTT-Server
-  // connectToMQTT();
+  connectToMQTT();
 
+  // Öffne den 1-Wire Bus
   setup1Wire();
+
+  outputSensors();
+
+  // Debug
+  strcpy(sensorList[0].name, "Temp");
+  strcpy(sensorList[1].name, "Fuellstand");
 }
 
 void printWiFiStatus() {
@@ -211,6 +409,10 @@ void printWiFiStatus() {
 }
 
 boolean checkWiFi() {
+  // Prüfe, ob WiFi überhaupt aktivier tist
+  if (!wifiActive) {
+    return true;
+  }
   // Ermittle den Zeitpunkt, bis zu dem der Verbindungsversuch dauern darf
   unsigned int deadline = millis() + (wifiTimeout * 1000);
 
@@ -250,6 +452,11 @@ boolean checkWiFi() {
 }
 
 boolean connectToMQTT() {
+  // Prüfe, ob MQTT überhaupt aktivier tist
+  if (!mqttActive) {
+    return true;
+  }
+
   if (!wifiFine()) {
     Serial.println("connectToMQTT(): Keine WLAN-Verbindung, breche Verbindung mit MQTT-Server ab");
     return false;
@@ -259,6 +466,7 @@ boolean connectToMQTT() {
   while (!mqttClient.connected()) {
     if (mqttClient.connect(mqttName, mqttUser, mqttPassword)) {
       Serial.println("connectToMQTT(): Verbunden mit MQTT-Server");
+      return true;
     } else {
       Serial.print("connectToMQTT(): Verbindung mit MQTT-Server fehlgeschlagen, rc=");
       Serial.println(mqttClient.state());
@@ -266,10 +474,52 @@ boolean connectToMQTT() {
   }
 }
 
+void displayTemperatures() {
+  SensorName name;
+
+  // Brich ab, wenn unser Inverall noch nicht erreicht ist
+  if (millis() < displayLast + (displayInterval * 1000)) {
+    return;
+  }
+  displayLast = millis();
+
+  tft.clearScreen();
+  tft.setCursor(xBegin, yBegin);
+
+  // Fehlermeldung, wenn keine Sensoren gefunden wurden
+  if (numberOfSensors <= 0) {
+    Serial.println("displayTemperatures(): Keine Sensoren gefunden, deren Daten angezeigt werden könnten"); 
+  }
+  outputSensors();
+
+  // Iteriere durch alle Sensoren
+  for (int i = 0; i < numberOfSensors; i++) {
+    // und wenn ein Name gesetzt ist,
+    if (!sensorList[i].name[0] == '\0') {
+      // Nimm den
+      strcpy(name, sensorList[i].name);
+    } else {
+      // Sonst die Adresse
+      strcpy(name, sensorList[i].address);
+    }
+    tft.println(String(name) + ": " + sensorList[i].value);
+    Serial.print("> ");
+    Serial.print(name);
+    Serial.print(": ");
+    Serial.println(sensorList[i].value);
+  }
+}
+
+
+
 void sendTemperaturesToMQTT() {
-  String topic = "n/a";
-  String payload;
-  DeviceAddress addr;
+  char topic[30] = "n/a";
+  char payload[10];
+
+  // Prüfe, ob WiFi überhaupt aktivier tist
+  if (!mqttActive) {
+    return;
+  }
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < sendLast + (sendInterval * 1000)) {
@@ -294,33 +544,31 @@ void sendTemperaturesToMQTT() {
   }
 
   // Iteriere durch alle Sensoren
-  for (int i = 0; i < sensors.getDeviceCount(); i++) {
+  for (int i = 0; i < numberOfSensors; i++) {
     // Ermittle die Temperatur
     Serial.println("Ermittle temperatur sensor " + String(i));
-    float tempC = sensors.getTempCByIndex(i);
-
-    // Ermittle die Adresse
-    Serial.println("Ermittle adresse sensor " + String(i));
-    sensors.getAddress(addr, i); 
-
     // Und bilde die MQTT-Nachricht
-    topic = "sensor/" + deviceAddrToStr(addr) + "/temperature";
-    payload = String(tempC);
-    Serial.println("topic: " + topic + " - payload: " + payload);
-    tft.clearScreen();
-    tft.setCursor(0, 0);
-    tft.print(deviceAddrToStr(addr) + ": " + payload);
-    mqttClient.publish(topic.c_str(), payload.c_str());
+    strcpy(topic, "sensor/");
+    strcat(topic, sensorList[i].address);
+    strcat(topic, "/temperature");
+    dtostrf(sensorList[i].value, 3, 2, payload);
+    
+    Serial.print("topic: ");
+    Serial.print(topic);
+    Serial.print(" - payload: ");
+    Serial.println(payload);
+    mqttClient.publish(topic, payload);
   }
 }
 
 void printSensorAddresses() {
+  DeviceAddress tempAddress;
+
   Serial.print("Anzahl: ");
   Serial.println(sensors.getDeviceCount());
   tft.print("Anzahl: ");
   tft.println(sensors.getDeviceCount());
-  for (int i = 0; i < sensors.getDeviceCount(); i++) {
-    DeviceAddress tempAddress;
+  for (int i = 0; i < sensors.getDeviceCount(); i++) {   
     sensors.getAddress(tempAddress, i);
 
     Serial.print("Sensor ");
@@ -348,6 +596,8 @@ void loop() {
   checkWiFi();
 
   getTemperatures();
+
+  displayTemperatures(); 
 
   sendTemperaturesToMQTT();
 
