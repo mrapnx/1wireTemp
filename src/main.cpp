@@ -188,7 +188,7 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
 
 boolean updateSensorValue(const SensorAddress address, const float value) {
    for (int i = 0; i < numberOfSensors; i++) {
-     if (sensorList[i].address == address) {
+     if (strcmp(sensorList[i].address, address) == 0) {
        sensorList[i].value = value;
        return true; 
      }
@@ -308,6 +308,7 @@ void blink() {
 void getTemperatures() {
 float value;
 String address;
+boolean updateRes;
 SensorAddress addressC;
 DeviceAddress addr;
 
@@ -341,7 +342,14 @@ DeviceAddress addr;
 
     // Aktualisiere die Liste
     Serial.println("Aktualisiere den Sensor in der Liste");
-    updateSensorValue(addressC, value);
+    updateRes = updateSensorValue(addressC, value);
+
+    if (updateRes) {
+      Serial.println("Ergebnis: Erfolg");
+    } else {
+      Serial.println("Ergebnis: Fehlschlag");
+    }
+    
   }  
 
 
@@ -440,6 +448,10 @@ void setup() {
   setup1Wire();
 
   outputSensors();
+
+  // Debug
+  strcpy(sensorList[0].name, "Temp");
+  strcpy(sensorList[1].name, "Fuellstand");
 }
 
 void printWiFiStatus() {
@@ -544,13 +556,15 @@ void displayTemperatures() {
   outputSensors();
   // Iteriere durch alle Sensoren
   for (int i = 0; i < numberOfSensors; i++) {
-    // Und bilde die MQTT-Nachricht
-    if (sensorList[i].name == NULL) {
-      strcpy(name, sensorList[i].name);
-    } else {
-      strcpy(name, sensorList[i].address);
-    }
     Serial.print("Gebe Wert für Sensor " + String(i) + " (");
+
+    if (sensorList[i].name[0] == '\0') {
+      strcpy(name, sensorList[i].address);
+      Serial.println("Name ist nicht gesetzt"); 
+    } else {
+      strcpy(name, sensorList[i].name);
+      Serial.println("Name ist gesetzt"); 
+    }
     Serial.print(name);
     Serial.print(") aus: " + String(name) + ": ");
     Serial.println(sensorList[i].value); 
