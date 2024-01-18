@@ -7,6 +7,7 @@
 #include <PubSubClient.h>
 #include <SPI.h>
 #include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
+#include "sensors.h"
 
 // *************** Konfig
 
@@ -31,6 +32,7 @@ int     yBegin     = 10;
 char ssid[] = "Muspelheim";
 char pass[] = "dRN4wlan5309GTD9fR";
 const int wifiTimeout = 10; // Timeout zur Verbindung mit dem WLAN in Sek
+const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 
 // MQTT-Zugangsdaten
 const char *mqttServer = "192.168.66.21";
@@ -61,31 +63,19 @@ unsigned long wifiCheckLast = 0;
 unsigned long blinkLast = 0;
 boolean blinking = false;
 
-// Arbeitsdaten
-typedef char SensorAddress[17];
-typedef char SensorType[11];
-typedef char SensorName[21];
-struct SensorData {
-  SensorAddress address;
-  SensorType type;
-  SensorName name;
-  float value;
-};
+// 1-Wire
 SensorData* sensorList = nullptr;  // Zeiger auf das Array von SensorData
 int numberOfSensors = 0; // Aktuelle Anzahl von Sensoren
-
-
-// 1-Wire
 byte addrArray[8];
 OneWire oneWire(PinOneWireBus);
 DallasTemperature sensors(&oneWire);
 
 // Webserver
 IPAddress   ip; 
-WiFiServer server(80);
+WiFiServer  server(wifiPort);
 
 // MQTT-Client
-WiFiClient wifiClient;
+WiFiClient   wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 // Display
@@ -97,22 +87,23 @@ boolean wifiFine();
 boolean checkWiFi();
 boolean connectToMQTT();
 
+// Sensorlisten-Methoden
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
 void clearSensorList();
-void outputSensors();
+void getSensorName(const SensorAddress address, SensorName); 
 
+// Ein- & Ausgabe-Methoden
+void outputSensors();
 void getTemperatures();
 void displayTemperatures(); 
-String deviceAddrToStr(DeviceAddress addr);
-void deviceAddrToStrNew(const DeviceAddress addr, String out);
-const char* deviceAddrToChar(DeviceAddress addr); 
-void getSensorName(const SensorAddress address, SensorName); 
 String getTemperatureAsHtml();
 void sendTemperaturesToMQTT();
 void printSensorAddresses();
 void printWiFiStatus();
+
+//  Setup-Methoden
 void setup1Wire(); 
 void setupDisplay();
 void setup();
@@ -146,41 +137,27 @@ void outputSensors() {
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value) {
   Serial.println("addSensor(): begin");
 
-  Serial.print("Adresse: ");
-  Serial.print(address);
-  Serial.print(" Name: ");
-  Serial.print(name);
-  Serial.print(" Typ: ");
-  Serial.print(type);
-  Serial.print(" Wert: ");
-  Serial.println(value);
-
-  Serial.println("addSensor(): Erzeuge SensorData tempArray");
   SensorData* tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
 
   // Übertrage vorhandene Daten in das temporäre Array
-  Serial.println("addSensor(): Übertrage vorhandene Daten in das temporäre Array");
   for (int i = 0; i < numberOfSensors; i++) {
     tempArray[i] = sensorList[i];
   }
 
   // Füge das neue Sensorobjekt hinzu
-  Serial.println("addSensor(): Füge das neue Sensorobjekt hinzu");
   //tempArray[numberOfSensors] = {*address, *name, *type, value};
   strcpy(tempArray[numberOfSensors].address, address);
   strcpy(tempArray[numberOfSensors].name, name);
-  strcpy(tempArray[numberOfSensors].type, type);
+  tempArray[numberOfSensors].type = type;
   tempArray[numberOfSensors].value = value;
+
   // Erhöhe die Anzahl der Sensoren
-  Serial.println("addSensor(): Erhöhe die Anzahl der Sensoren");
   numberOfSensors++;
 
   // Befreie den alten Speicher
-  Serial.println("addSensor(): Befreie den alten Speicher");
   free(sensorList);
 
   // Weise den neuen Speicher zu
-  Serial.println("addSensor(): Weise den neuen Speicher zu");
   sensorList = tempArray;
 
   Serial.println("addSensor(): end");
@@ -253,42 +230,7 @@ boolean sensorsFine() {
  return sensors.getDeviceCount() > 0;
 }
 
-String deviceAddrToStr(DeviceAddress addr) {
-  String returnString = "";
-    for (uint8_t j = 0; j < 8; j++) {
-      // if (addr[j] < 16) returnString = "0";  // War im ursprünglichen Vorschlag einer Konvertierung, scheint aber keinen Sinn zu machen, da HEX 00 legitim ist.
-      if (addr[j] < 16) {
-        returnString = returnString + "00";
-      } else {
-      returnString = returnString + String(addr[j], HEX);
-      }
-    }
-  returnString.toUpperCase();
-  return returnString;
-}
 
-void deviceAddrToStrNew(const DeviceAddress addr, String out) {
-  out = "";
-    for (uint8_t j = 0; j < 8; j++) {
-      if (addr[j] < 16) out = "0";
-      out = out + String(addr[j], HEX);
-      Serial.println("deviceAddrToStrNew() Durchlauf " + String(j) + ": out = " + out);
-    }
-  out.toUpperCase();
-  Serial.println("deviceAddrToStrNew() ende, out = " + out);
-}
-
-const char* deviceAddrToChar(DeviceAddress addr) {
-  static SensorAddress result;
-  String returnString = "";
-    for (uint8_t j = 0; j < 8; j++) {
-      if (addr[j] < 16) returnString = "0";
-      returnString = returnString + String(addr[j], HEX);
-    }
-  returnString.toUpperCase();
-  strcpy(result, returnString.c_str());
-  return result;
-}
 
 
 void blink() {
@@ -308,7 +250,6 @@ void blink() {
 void getTemperatures() {
 float value;
 String address;
-boolean updateRes;
 SensorAddress addressC;
 DeviceAddress addr;
 
@@ -326,34 +267,19 @@ DeviceAddress addr;
   // Iteriere durch alle Sensoren
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
     // Ermittle die Adresse
-    Serial.println("Ermittle Adresse Sensor " + String(i));
     sensors.getAddress(addr, i); 
     address = deviceAddrToStr(addr);
     strcpy (addressC, address.c_str());
-    Serial.println("address: " + address);
-    Serial.print("addressC: ");
-    Serial.println(addressC);
 
     // Ermittle die Temperatur
-    Serial.println("Ermittle Wert Sensor " + String(i));
     value = sensors.getTempCByIndex(i);
-    Serial.print("Wert Sensor " + String(i) + ": ");
-    Serial.println(value);
 
     // Aktualisiere die Liste
-    Serial.println("Aktualisiere den Sensor in der Liste");
-    updateRes = updateSensorValue(addressC, value);
-
-    if (updateRes) {
-      Serial.println("Ergebnis: Erfolg");
-    } else {
-      Serial.println("Ergebnis: Fehlschlag");
-    }
+    updateSensorValue(addressC, value);
     
   }  
 
-
-Serial.println("getTemperatures() end");
+  Serial.println("getTemperatures() end");
 }
 
 void setup1Wire() {
@@ -361,6 +287,7 @@ float value;
 String address;
 SensorAddress addressC;
 SensorName nameC;
+SensorType typeC;
 DeviceAddress addr;
 
     // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
@@ -404,7 +331,17 @@ DeviceAddress addr;
     Serial.print("Name Sensor " + String(i) + ": ");
     Serial.println(nameC);
 
-    addSensor(addressC, nameC, "unknown", value);
+    // Ermittle den Typ
+    Serial.println("Ermittle Typ Sensor " + String(i));
+    if (getSensorType(addressC, typeC) == true) {
+      Serial.println("Typ erfolgreich ermittelt");
+    } else {
+      Serial.println("Typ nicht erfolgreich ermittelt");
+    }
+    Serial.print("Typ Sensor " + String(i) + ": ");
+    Serial.println(typeC);
+
+    addSensor(addressC, nameC, typeC, value);
   }  
   outputSensors();
 }
@@ -554,22 +491,22 @@ void displayTemperatures() {
     Serial.println("displayTemperatures(): Keine Sensoren gefunden, deren Daten angezeigt werden könnten"); 
   }
   outputSensors();
+
   // Iteriere durch alle Sensoren
   for (int i = 0; i < numberOfSensors; i++) {
-    Serial.print("Gebe Wert für Sensor " + String(i) + " (");
-
-    if (sensorList[i].name[0] == '\0') {
-      strcpy(name, sensorList[i].address);
-      Serial.println("Name ist nicht gesetzt"); 
-    } else {
+    // und wenn ein Name gesetzt ist,
+    if (!sensorList[i].name[0] == '\0') {
+      // Nimm den
       strcpy(name, sensorList[i].name);
-      Serial.println("Name ist gesetzt"); 
+    } else {
+      // Sonst die Adresse
+      strcpy(name, sensorList[i].address);
     }
-    Serial.print(name);
-    Serial.print(") aus: " + String(name) + ": ");
-    Serial.println(sensorList[i].value); 
     tft.println(String(name) + ": " + sensorList[i].value);
-    Serial.println("> " + String(name) + ": " + sensorList[i].value);
+    Serial.print("> ");
+    Serial.print(name);
+    Serial.print(": ");
+    Serial.println(sensorList[i].value);
   }
 }
 
