@@ -283,13 +283,13 @@ SensorAddress addressC;
       Serial.print("Temperature = ");
       Serial.print(ds2438.getTemperature(), 1);
       Serial.print("C, Channel A = ");
-      Serial.print(ds2438.getVoltage(DS2438_CHA), 1);
+      Serial.print(ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
       Serial.print("v, Channel B = ");
       Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
       Serial.println("v.");
       address = deviceAddrToStr(DS2438_address);
       strcpy (addressC, address.c_str());
-      updateSensorValue(addressC, ds2438.getVoltage(DS2438_CHB));
+      updateSensorValue(addressC, ds2438.getVoltage(DS2438_CHA));
   }
 
   Serial.println("getLevels() end");
