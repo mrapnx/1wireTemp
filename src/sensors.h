@@ -15,7 +15,7 @@ byte convertHexCStringToByte(const char* hexString);
 String deviceAddrToStr(DeviceAddress addr);
 void deviceAddrToStrNew(const DeviceAddress addr, String out);
 const char* deviceAddrToChar(DeviceAddress addr); 
-bool getSensorType(const SensorAddress manufacturerCode, char& sensorType);
+bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType);
 
 
 byte convertHexCStringToByte(const char* hexString) {
@@ -40,7 +40,7 @@ byte convertHexCStringToByte(const char* hexString) {
   return result;
 }
 
-bool getSensorType(const SensorAddress manufacturerCode, char& sensorType) {
+bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType) {
   char code[17];
   byte firstByte;
   // Überprüfe nur das erste Byte des char-Arrays

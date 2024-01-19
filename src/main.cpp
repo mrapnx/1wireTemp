@@ -7,6 +7,7 @@
 #include <PubSubClient.h>
 #include <SPI.h>
 #include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
+#include <DS2438.h>
 #include "sensors.h"
 
 // *************** Konfig
@@ -41,13 +42,16 @@ const char *mqttName = "ArduinoClient";
 const char *mqttUser = "ArudinoNano";
 const char *mqttPassword = "DEIN_MQTT_PASSWORT";
 
-// Pin, an dem der 1-Wire-Bus angeschlossen ist
-const int PinOneWireBus = 10; // = D10
+// 1-Wire
+const int PinOneWireBus = 10; // Pin, an dem der 1-Wire-Bus angeschlossen ist // = D10
+uint8_t DS2438_address[] = { 0x26, 0x2c, 0xc4, 0x2c, 0x00, 0x00, 0x00, 0xf5 }; // Adresse des DS2438 
 
 // Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
 const int wifiCheckInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen abgefragt werden
-const int tempCheckInterval = 10;
+const int tempCheckInterval = 1;
+// Frequenz in Sekunden, in der die Füllstände abgefragt werden
+const int levelCheckInterval = 1;
 // Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
 const int sendInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen angezeigt werden
@@ -57,6 +61,7 @@ const int blinkInterval = 500;
 
 // ***************  Globale Variablen
 unsigned long tempCheckLast = 0;
+unsigned long levelCheckLast = 0;
 unsigned long sendLast = 0;
 unsigned long displayLast = 0;
 unsigned long wifiCheckLast = 0;
@@ -69,6 +74,8 @@ int numberOfSensors = 0; // Aktuelle Anzahl von Sensoren
 byte addrArray[8];
 OneWire oneWire(PinOneWireBus);
 DallasTemperature sensors(&oneWire);
+DS2438 ds2438(&oneWire, DS2438_address);
+
 
 // Webserver
 IPAddress   ip; 
@@ -93,11 +100,13 @@ void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
 void clearSensorList();
 void getSensorName(const SensorAddress address, SensorName); 
+boolean getSensorType(const SensorAddress address, SensorType& type);
 
 // Ein- & Ausgabe-Methoden
 void outputSensors();
 void getTemperatures();
-void displayTemperatures(); 
+void getLevels();
+void displayValues(); 
 String getTemperatureAsHtml();
 void sendTemperaturesToMQTT();
 void printSensorAddresses();
@@ -173,6 +182,15 @@ boolean updateSensorValue(const SensorAddress address, const float value) {
    return false;
 }
 
+boolean getSensorType(const SensorAddress address, SensorType& type) {
+   for (int i = 0; i < numberOfSensors; i++) {
+     if (strcmp(sensorList[i].address, address) == 0) {
+       type = sensorList[i].type;
+       return true; 
+     }
+   }
+   return false;
+}
 
 void getSensorName(const SensorAddress address, SensorName name) {
   // TODO: Dummy Funktion
@@ -247,11 +265,42 @@ void blink() {
   }
 }
 
+void getLevels() {
+String address;
+SensorAddress addressC;
+
+  // Brich ab, wenn unser Inverall noch nicht erreicht ist
+  if (millis() < levelCheckLast + (levelCheckInterval * 1000)) {
+    return;
+  }
+  Serial.println("getLevels() begin");
+  levelCheckLast = millis();
+
+  ds2438.update();
+  if (ds2438.isError()) {
+      Serial.println("Error reading from DS2438 device");
+  } else {
+      Serial.print("Temperature = ");
+      Serial.print(ds2438.getTemperature(), 1);
+      Serial.print("C, Channel A = ");
+      Serial.print(ds2438.getVoltage(DS2438_CHA), 1);
+      Serial.print("v, Channel B = ");
+      Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
+      Serial.println("v.");
+      address = deviceAddrToStr(DS2438_address);
+      strcpy (addressC, address.c_str());
+      updateSensorValue(addressC, ds2438.getVoltage(DS2438_CHB));
+  }
+
+  Serial.println("getLevels() end");
+}
+
 void getTemperatures() {
 float value;
 String address;
 SensorAddress addressC;
 DeviceAddress addr;
+SensorType type;
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < tempCheckLast + (tempCheckInterval * 1000)) {
@@ -274,9 +323,13 @@ DeviceAddress addr;
     // Ermittle die Temperatur
     value = sensors.getTempCByIndex(i);
 
-    // Aktualisiere die Liste
-    updateSensorValue(addressC, value);
-    
+    // Prüfe, ob der Typ (="t") passt
+    if (getSensorType(addressC, type)) {
+      if (type == 't') {
+        // Aktualisiere die Liste
+        updateSensorValue(addressC, value);
+      }
+    }
   }  
 
   Serial.println("getTemperatures() end");
@@ -298,8 +351,11 @@ DeviceAddress addr;
   }
 
 
-  // Suche nach angeschlossenen Sensoren
+  // Starte Objekt für Temperatur-Sensoren
   sensors.begin();
+
+  // Starte Objekt für DS2438
+  ds2438.begin();
 
   // Leere die Liste
   clearSensorList();
@@ -333,7 +389,7 @@ DeviceAddress addr;
 
     // Ermittle den Typ
     Serial.println("Ermittle Typ Sensor " + String(i));
-    if (getSensorType(addressC, typeC) == true) {
+    if (getSensorTypeByAddress(addressC, typeC) == true) {
       Serial.println("Typ erfolgreich ermittelt");
     } else {
       Serial.println("Typ nicht erfolgreich ermittelt");
@@ -343,7 +399,6 @@ DeviceAddress addr;
 
     addSensor(addressC, nameC, typeC, value);
   }  
-  outputSensors();
 }
 
 String getTemperatureAsHtml() {
@@ -389,6 +444,8 @@ void setup() {
   // Debug
   strcpy(sensorList[0].name, "Temp");
   strcpy(sensorList[1].name, "Fuellstand");
+
+  tft.clearScreen();
 }
 
 void printWiFiStatus() {
@@ -474,7 +531,7 @@ boolean connectToMQTT() {
   }
 }
 
-void displayTemperatures() {
+void displayValues() {
   SensorName name;
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
@@ -483,14 +540,13 @@ void displayTemperatures() {
   }
   displayLast = millis();
 
-  tft.clearScreen();
+  tft.fillRect(xBegin, yBegin, 128, 20, 0x0000);
   tft.setCursor(xBegin, yBegin);
 
   // Fehlermeldung, wenn keine Sensoren gefunden wurden
   if (numberOfSensors <= 0) {
     Serial.println("displayTemperatures(): Keine Sensoren gefunden, deren Daten angezeigt werden könnten"); 
   }
-  outputSensors();
 
   // Iteriere durch alle Sensoren
   for (int i = 0; i < numberOfSensors; i++) {
@@ -596,8 +652,9 @@ void loop() {
   checkWiFi();
 
   getTemperatures();
+  getLevels();
 
-  displayTemperatures(); 
+  displayValues(); 
 
   sendTemperaturesToMQTT();
 
