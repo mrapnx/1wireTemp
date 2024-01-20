@@ -6,17 +6,35 @@
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
 #include <SPI.h>
+#include <FlashStorage_SAMD.h>
 #include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
 #include <DS2438.h>
 #include "sensors.h"
 
 // *************** Konfig
 
+typedef struct {
+  // WLAN
+  boolean wifiActive = true;
+  char ssid[20] = "Arduino AP";
+  char pass[20] = "Arduino AP";
+  char mode = 'a'; // a = Access Point / c = Client
+  int wifiTimeout = 10;
+
+  // MQTT-Zugangsdaten
+  boolean mqttActive = true;
+  char *mqttServer = "127.0.0.1";
+  int mqttPort = 1883;
+  char *mqttName = "ArduinoClient";
+  char *mqttUser = "ArudinoNano";
+  char *mqttPassword = "DEIN_MQTT_PASSWORT";
+  
+} Config;
+
 // Einstellungen
-boolean wifiActive = false;
-boolean mqttActive = false;
 int     xBegin     = 0;
 int     yBegin     = 10;
+const int WRITTEN_SIGNATURE = 0xBEEFDEED;
 
 // Display
                       // Rot   LED   +3.3V
@@ -29,18 +47,6 @@ int     yBegin     = 10;
                       // Rot   VCC   +3.3V                     
 #define TFT_MISO 12   //   - D12
 
-// WLAN-Zugangsdaten
-char ssid[] = "Muspelheim";
-char pass[] = "dRN4wlan5309GTD9fR";
-const int wifiTimeout = 10; // Timeout zur Verbindung mit dem WLAN in Sek
-const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
-
-// MQTT-Zugangsdaten
-const char *mqttServer = "192.168.66.21";
-const int mqttPort = 1883;
-const char *mqttName = "ArduinoClient";
-const char *mqttUser = "ArudinoNano";
-const char *mqttPassword = "DEIN_MQTT_PASSWORT";
 
 // 1-Wire
 const int PinOneWireBus = 10; // Pin, an dem der 1-Wire-Bus angeschlossen ist // = D10
@@ -58,6 +64,9 @@ const int sendInterval = 10;
 const int displayInterval = 1;
 // Frequenz, in der die orange LED bei Fehlern blinkt in ms
 const int blinkInterval = 500; 
+
+  // WLAN
+  const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 
 // ***************  Globale Variablen
 unsigned long tempCheckLast = 0;
@@ -88,11 +97,17 @@ PubSubClient mqttClient(wifiClient);
 // Display
 TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS, TFT_DC, TFT_RST);
 
+// Speicher
+FlashStorage(configStorage, Config);
+Config config;
+
 // *************** Deklaration der Funktionen
 boolean sensorsFine();
 boolean wifiFine();
 boolean checkWiFi();
 boolean connectToMQTT();
+void loadConfig();
+void saveConfig();
 
 // Sensorlisten-Methoden
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value);
@@ -115,6 +130,7 @@ void printWiFiStatus();
 //  Setup-Methoden
 void setup1Wire(); 
 void setupDisplay();
+void setupMemory();
 void setup();
 
 // ***************  Funktionen
@@ -128,6 +144,16 @@ void clearSensorList() {
   // Setze den Zeiger auf null, um sicherzustellen, dass er nicht auf ungültigen Speicher zeigt
   sensorList = nullptr;
 }
+
+void saveConfig() {
+  configStorage.write(config);
+}
+
+
+void loadConfig() {
+   configStorage.read(config);
+}
+
 
 void outputSensors() {
   Serial.println("Anzahl Sensoren im Array: " + String(numberOfSensors));
@@ -227,7 +253,6 @@ void removeSensor(SensorAddress address) {
     }
   }
 }
-
 
 void setupDisplay() {
   Serial.println("setup() Initialisiere Display");
@@ -422,10 +447,9 @@ String getTemperatureAsHtml() {
 void setup() {
   // Starte die serielle Kommunikation
   Serial.begin(9600);
-  delay(1000);
+  while (!SERIAL_PORT_MONITOR) { }
   Serial.println("setup() begin");
   pinMode(LED_BUILTIN, OUTPUT);
-
 
   // Display
   setupDisplay();
@@ -467,11 +491,11 @@ void printWiFiStatus() {
 
 boolean checkWiFi() {
   // Prüfe, ob WiFi überhaupt aktivier tist
-  if (!wifiActive) {
+  if (!config.wifiActive) {
     return true;
   }
   // Ermittle den Zeitpunkt, bis zu dem der Verbindungsversuch dauern darf
-  unsigned int deadline = millis() + (wifiTimeout * 1000);
+  unsigned int deadline = millis() + (config.wifiTimeout * 1000);
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < wifiCheckLast + (wifiCheckInterval * 1000)) {
@@ -481,13 +505,25 @@ boolean checkWiFi() {
  
   // Wenn WLAN nicht verbunden ist,
   if (!wifiFine()) {
-    // versuch, die Verbindung aufzubauen
-    Serial.println("Verbinde mit WLAN...");
-    while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
-      delay(1000);
-      Serial.println("Verbindung wird hergestellt...");
-      if (millis() > deadline) {
-        break;
+    if (config.mode == 'c') {
+      // versuch, die Verbindung aufzubauen
+      Serial.println("Verbinde mit WLAN...");
+      while (WiFi.begin(config.ssid, config.pass) != WL_CONNECTED) {
+        delay(1000);
+        Serial.println("Verbindung wird hergestellt...");
+        if (millis() > deadline) {
+          break;
+        }
+      }
+    } else {
+      // Versuch, den AP zu starten
+      Serial.println("Starte WLAN AccessPoint...");
+      while (WiFi.beginAP(config.ssid, config.pass) != WL_CONNECTED) {
+        delay(1000);
+        Serial.println("AccessPoint wird gestartet...");
+        if (millis() > deadline) {
+          break;
+        }
       }
     }
   } else {
@@ -508,9 +544,13 @@ boolean checkWiFi() {
   } 
 }
 
+void setupMemory() {
+
+}
+
 boolean connectToMQTT() {
   // Prüfe, ob MQTT überhaupt aktivier tist
-  if (!mqttActive) {
+  if (!config.mqttActive) {
     return true;
   }
 
@@ -519,9 +559,9 @@ boolean connectToMQTT() {
     return false;
   }
   Serial.println("connectToMQTT(): Verbinde mit MQTT-Server...");
-  mqttClient.setServer(mqttServer, mqttPort);
+  mqttClient.setServer(config.mqttServer, config.mqttPort);
   while (!mqttClient.connected()) {
-    if (mqttClient.connect(mqttName, mqttUser, mqttPassword)) {
+    if (mqttClient.connect(config.mqttName, config.mqttUser, config.mqttPassword)) {
       Serial.println("connectToMQTT(): Verbunden mit MQTT-Server");
       return true;
     } else {
@@ -573,7 +613,7 @@ void sendTemperaturesToMQTT() {
   char payload[10];
 
   // Prüfe, ob WiFi überhaupt aktivier tist
-  if (!mqttActive) {
+  if (!config.mqttActive) {
     return;
   }
 
