@@ -22,7 +22,7 @@ typedef struct {
   int wifiTimeout = 10;
 
   // MQTT-Zugangsdaten
-  boolean mqttActive = true;
+  boolean mqttActive = false;
   char *mqttServer = "127.0.0.1";
   int mqttPort = 1883;
   char *mqttName = "ArduinoClient";
@@ -55,13 +55,13 @@ uint8_t DS2438_address[] = { 0x26, 0x2c, 0xc4, 0x2c, 0x00, 0x00, 0x00, 0xf5 }; /
 // Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
 const int wifiCheckInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen abgefragt werden
-const int tempCheckInterval = 1;
+const int tempCheckInterval = 15;
 // Frequenz in Sekunden, in der die Füllstände abgefragt werden
-const int levelCheckInterval = 1;
+const int levelCheckInterval = 15;
 // Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
 const int sendInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen angezeigt werden
-const int displayInterval = 1;
+const int displayInterval = 10;
 // Frequenz, in der die orange LED bei Fehlern blinkt in ms
 const int blinkInterval = 500; 
 
@@ -89,6 +89,8 @@ DS2438 ds2438(&oneWire, DS2438_address);
 // Webserver
 IPAddress   ip; 
 WiFiServer  server(wifiPort);
+WiFiClient  client; 
+int         status = WL_IDLE_STATUS;
 
 // MQTT-Client
 WiFiClient   wifiClient;
@@ -122,18 +124,47 @@ void outputSensors();
 void getTemperatures();
 void getLevels();
 void displayValues(); 
-String getTemperatureAsHtml();
+char* getValue(const String& data, const char* key);
+String getValuesAsHtml();
 void sendTemperaturesToMQTT();
 void printSensorAddresses();
 void printWiFiStatus();
+void htmlGetHeader(int refresh);
+void htmlGetStatus();
+void htmlGetConfig();
+void htmlSetConfig();
+void httpProcessRequests();
 
 //  Setup-Methoden
 void setup1Wire(); 
 void setupDisplay();
 void setupMemory();
+void setupWifi();
 void setup();
 
 // ***************  Funktionen
+char* getValue(const String& data, const char* key) {
+  String delimiter = "=";
+  int keyIndex = data.indexOf(key + delimiter);
+  if (keyIndex == -1) {
+    return "";  // Wenn der Schlüssel nicht gefunden wurde, leeres C-String zurückgeben
+  }
+
+  keyIndex += strlen(key) + delimiter.length();
+
+  int endIndex = data.indexOf('&', keyIndex);
+  if (endIndex == -1) {
+    endIndex = data.length();
+  }
+
+  static char result[100]; // Annahme: Der Wert passt in einen 100-Byte-Puffer
+  data.substring(keyIndex, endIndex).toCharArray(result, sizeof(result));
+
+  // Füge den nullterminierenden Zeichen manuell hinzu
+  result[sizeof(result) - 1] = '\0';
+
+  return result;
+}
 void clearSensorList() {
   // Befreie den Speicher von sensorList
   free(sensorList);
@@ -266,15 +297,19 @@ void setupDisplay() {
 }
 
 boolean wifiFine() {
-  return WiFi.status() == WL_CONNECTED;
+  switch(config.mode) {
+    case 'c': 
+      return WiFi.status() == WL_CONNECTED; // Positiver Zustand als Client
+    case 'a': 
+      return (WiFi.status() == WL_AP_CONNECTED || WiFi.status() == WL_AP_LISTENING); // Positive Zustände als AP
+    default: 
+      return false;
+  }
 }
 
 boolean sensorsFine() {
  return sensors.getDeviceCount() > 0;
 }
-
-
-
 
 void blink() {
   if (wifiFine() && sensorsFine()) {
@@ -426,8 +461,9 @@ DeviceAddress addr;
   }  
 }
 
-String getTemperatureAsHtml() {
-  Serial.println("getTemperatureAsHtml() begin");
+String getValuesAsHtml() {
+// TODO: Informationen aus der sensorList beziehen
+  Serial.println("getValuesAsHtml() begin");
   String address;
   String temp;
   DeviceAddress addr;
@@ -441,7 +477,7 @@ String getTemperatureAsHtml() {
     Serial.println("Ermittle Inhalt für Webserver: " + returnString);
   }
   return returnString;
-  Serial.println("getTemperatureAsHtml() end");
+  Serial.println("getValuesAsHtml() end");
 }
 
 void setup() {
@@ -454,7 +490,8 @@ void setup() {
   // Display
   setupDisplay();
 
-  // Verbinde mit dem WLAN
+  // Stelle Verbindung mit dem WLAN her
+  setupWifi();
   checkWiFi();
 
   // Verbinde mit dem MQTT-Server
@@ -473,24 +510,35 @@ void setup() {
 }
 
 void printWiFiStatus() {
+int serverStatus;
+
   Serial.println("printWiFiStatus() begin");
   // print the SSID of the network you're attached to:
   Serial.print("SSID: ");
   Serial.println(WiFi.SSID());
+
+  if (config.mode = 'a') {
+    Serial.print("Password: ");
+    Serial.println(config.pass);
+  };
 
   // print your WiFi shield's IP address:
   ip = WiFi.localIP();
   Serial.print("IP Address: ");
   Serial.println(ip);
 
+
   // print where to go in a browser:
-  Serial.print("To see this page in action, open a browser to http://");
+  Serial.print("Server Status: ");
+  serverStatus = server.status();
+  Serial.println(serverStatus);
+  Serial.print("IP-Address: http://");
   Serial.println(ip);
   Serial.println("printWiFiStatus() end");
 }
 
 boolean checkWiFi() {
-  // Prüfe, ob WiFi überhaupt aktivier tist
+  // Prüfe, ob WiFi überhaupt aktiviert tist
   if (!config.wifiActive) {
     return true;
   }
@@ -502,9 +550,12 @@ boolean checkWiFi() {
     return false;
   }
   wifiCheckLast = millis();
- 
+
+  Serial.println("checkWiFi() Prüfe, ob WLAN Verbindung besteht");
+
   // Wenn WLAN nicht verbunden ist,
   if (!wifiFine()) {
+    Serial.println("checkWiFi() WLAN Verbindung besteht nicht");
     if (config.mode == 'c') {
       // versuch, die Verbindung aufzubauen
       Serial.println("Verbinde mit WLAN...");
@@ -518,7 +569,7 @@ boolean checkWiFi() {
     } else {
       // Versuch, den AP zu starten
       Serial.println("Starte WLAN AccessPoint...");
-      while (WiFi.beginAP(config.ssid, config.pass) != WL_CONNECTED) {
+      while (WiFi.beginAP(config.ssid, config.pass) != WL_AP_LISTENING) {
         delay(1000);
         Serial.println("AccessPoint wird gestartet...");
         if (millis() > deadline) {
@@ -528,24 +579,45 @@ boolean checkWiFi() {
     }
   } else {
     // Wenn die Verbindung besteht, steig aus
+    Serial.println("checkWiFi() WLAN Verbindung besteht");
     return true;
   } 
 
+  Serial.println("checkWiFi() Prüfe erneut, ob WLAN Verbindung besteht");
   // Prüfe, ob nun eine Verbindung besteht
   if (wifiFine()) {
     Serial.println("Verbunden mit WLAN");
     // Starte den Webserver
+    Serial.println("Starte Server");
     server.begin();
     printWiFiStatus();
     return true;
   } else  {
-    Serial.println("Verbindung mit WLAN fehlgeschlagen!");
+    Serial.println("WLAN nicht verbunden!");
     return false;
   } 
+  Serial.println("checkWiFi() end");
 }
 
 void setupMemory() {
 
+}
+
+void setupWifi() {
+  if (!config.wifiActive) {
+    return;
+  }
+  Serial.println("setupWifi() begin");
+  // check for the WiFi module:
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println("Communication with WiFi module failed!");
+  }
+
+  String fv = WiFi.firmwareVersion();
+  if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
+    Serial.println("Please upgrade the firmware");
+  }
+  Serial.println("setupWifi() end");
 }
 
 boolean connectToMQTT() {
@@ -686,6 +758,165 @@ void printSensorAddresses() {
   }
 }
 
+void htmlGetHeader(int refresh) {
+  // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
+  // and a content-type so the client knows what's coming, then a blank line:
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:text/html");
+  client.println();
+
+  // the content of the HTTP response follows the header:
+  client.print("<html>");
+  client.print("<head>");
+  if (refresh > 0) {
+    client.print("<meta http-equiv=\"refresh\" content=\"");
+    client.print(refresh);
+    client.print("; url=http://");
+    client.print(ip); 
+    client.print("/\"/>");
+  }
+  client.print("</head>");
+}
+
+
+void htmlGetConfig() {
+  htmlGetHeader(0);
+  client.print("<html><body>");
+  client.print("<h1>Konfiguration</h1>");
+  client.print("<form method='post' action='/update'>");
+  client.print("<p>WLAN aktiv: <input type='checkbox' name='wifiActive' " + String(config.wifiActive ? "checked" : "") + "></p>");
+  client.print("<p>SSID: <input type='text' name='ssid' value='" + String(config.ssid) + "'></p>");
+  client.print("<p>Passwort: <input type='password' name='pass' value='" + String(config.pass) + "'></p>");
+  client.print("<p>Modus (a=Access Point, c=Client): <input type='text' name='mode' value='" + String(config.mode) + "'></p>");
+  client.print("<p>WLAN Timeout: <input type='text' name='wifiTimeout' value='" + String(config.wifiTimeout) + "'></p>");
+
+  client.print("<p>MQTT aktiv: <input type='checkbox' name='mqttActive' " + String(config.mqttActive ? "checked" : "") + "></p>");
+  client.print("<p>MQTT Server: <input type='text' name='mqttServer' value='" + String(config.mqttServer) + "'></p>");
+  client.print("<p>MQTT Port: <input type='text' name='mqttPort' value='" + String(config.mqttPort) + "'></p>");
+  client.print("<p>MQTT Name: <input type='text' name='mqttName' value='" + String(config.mqttName) + "'></p>");
+  client.print("<p>MQTT Benutzer: <input type='text' name='mqttUser' value='" + String(config.mqttUser) + "'></p>");
+  client.print("<p>MQTT Passwort: <input type='password' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
+
+  client.print("<input type='submit' value='Speichern'>");
+  client.print("</form>");
+  client.print("<br/>");
+  client.print("<br/>");
+  client.print("<a href=\"/\">Zur&uuml;ck</a>");
+  client.print("</body></html>");
+}
+
+void htmlSetConfig() {
+// Lese den HTTP-Body, der die aktualisierten Daten enthält
+  String body = "";
+  while (client.available()) {
+    char c = client.read();
+    body += c;
+  }
+
+  // Extrahiere die aktualisierten Werte aus dem HTTP-Body
+  config.wifiActive = body.indexOf("wifiActive=on") != -1;
+  strcpy(config.ssid, getValue(body, "ssid"));
+  strcpy(config.pass, getValue(body, "pass"));
+  config.mode = getValue(body, "mode")[0];
+  config.wifiTimeout = atoi(getValue(body, "wifiTimeout")); // Umwandlung in Integer
+
+  config.mqttActive = body.indexOf("mqttActive=on") != -1;
+  strcpy(config.mqttServer, getValue(body, "mqttServer"));
+  config.mqttPort = atoi(getValue(body, "mqttPort")); // Umwandlung in Integer
+  strcpy(config.mqttName, getValue(body, "mqttName"));
+  strcpy(config.mqttUser, getValue(body, "mqttUser"));
+  strcpy(config.mqttPassword, getValue(body, "mqttPassword"));
+}
+
+void htmlGetStatus() {
+  htmlGetHeader(2);
+  // client.print("<html><body>");  // ohne  korrektem html und body passt die Schriftgröße irgendwie immer
+  client.print("<p style=\"font-size:80px; font-family: monospace\">"); 
+  client.print("Sensoren: </br>");
+  client.print(getValuesAsHtml());
+  //client.print("s <b><a href=\"/m\">+</a>&nbsp;&nbsp;<a href=\"/l\">-</a></b>");
+  client.print("<br/>");
+  //client.print("<a href=\"/1\">Start</a><br/>");
+  client.print("<a href=\"/config\">Konfiguration</a><br/>");
+  client.print("</p>");
+  client.print("</html>");
+
+  // The HTTP response ends with another blank line:
+  client.println();
+
+  // break out of the while loop:
+
+}
+
+void httpProcessRequests() {
+  // compare the previous status to the current status
+  if (status != WiFi.status()) {
+    // it has changed update the variable
+    status = WiFi.status();
+    if (status == WL_AP_CONNECTED) {
+
+      // a device has connected to the AP
+      Serial.println("Device connected to AP");
+    } else {
+      // a device has disconnected from the AP, and we are back in listening mode
+      Serial.println("Device disconnected from AP");
+    }
+  }
+
+
+  // Verarbeite HTTP-Anfragen
+  client = server.available();
+  if (client) {                             // if you get a client,
+    Serial.println("httpProcessRequests() new client");           // print a message out the serial port
+    String currentLine = "";                // make a String to hold incoming data from the client
+    while (client.connected()) {            // loop while the client's connected
+      if (client.available()) {             // if there's bytes to read from the client,
+        char c = client.read();             // read a byte, then
+        Serial.write(c);                    // print it out the serial monitor
+        if (c == '\n') {                    // if the byte is a newline character
+          // if the current line is blank, you got two newline characters in a row.
+          // that's the end of the client HTTP request, so send a response:
+          if (currentLine.length() == 0) {
+            Serial.println("GET / => Status");
+            htmlGetStatus();
+            break;
+          }
+          else {      // if you got a newline, then clear currentLine:
+            currentLine = "";
+          }
+        }
+
+        else if (c != '\r') {    // if you got anything else but a carriage return character,
+          currentLine += c;      // add it to the end of the currentLine
+        }
+
+        // "Config"
+        if (currentLine.endsWith("GET /config")) {
+          Serial.println("GET /config => Config");
+          htmlGetConfig();
+          break;
+        }
+
+        // "Off"
+        if (currentLine.endsWith("GET /0")) {
+          Serial.println("GET /0 => ??");
+        }
+
+      } else {
+        Serial.println("Nothing to read from client");
+      }
+    }
+
+    // close the connection:
+    client.stop();
+    Serial.println("client disconnected");
+  } else {
+    // no new client  
+  }
+
+}
+
+
 void loop() {
   blink();
 
@@ -698,81 +929,6 @@ void loop() {
 
   sendTemperaturesToMQTT();
 
-  // Verarbeite HTTP-Anfragen
-  WiFiClient client = server.available();
-  if (client) {                             // if you get a client,
-    Serial.println("new client");           // print a message out the serial port
-    String currentLine = "";                // make a String to hold incoming data from the client
-    while (client.connected()) {            // loop while the client's connected
-      if (client.available()) {             // if there's bytes to read from the client,
-        char c = client.read();             // read a byte, then
-        Serial.write(c);                    // print it out the serial monitor
-        if (c == '\n') {                    // if the byte is a newline character
-
-          // if the current line is blank, you got two newline characters in a row.
-          // that's the end of the client HTTP request, so send a response:
-          if (currentLine.length() == 0) {
-
-            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-            // and a content-type so the client knows what's coming, then a blank line:
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-type:text/html");
-            client.println();
-
-            // the content of the HTTP response follows the header:
-            client.print("<html>");
-            client.print("<head>");
-            client.print("<meta http-equiv=\"refresh\" content=\"1; url=http://");
-            client.print(ip);
-            client.print("/\"/>");
-            client.print("</head>");
-            client.print("<p style=\"font-size:80px; font-family: monospace\">"); 
-            client.print("Sensoren: </br>");
-            client.print(getTemperatureAsHtml());
-            //client.print("s <b><a href=\"/m\">+</a>&nbsp;&nbsp;<a href=\"/l\">-</a></b>");
-            client.print("<br/>");
-            //client.print("<a href=\"/1\">Start</a><br/>");
-            //client.print("<a href=\"/0\">Stop</a><br/>");
-            client.print("</p>");
-            client.print("</html>");
-
-            // The HTTP response ends with another blank line:
-            client.println();
-
-            // break out of the while loop:
-            break;
-
-          }
-          else {      // if you got a newline, then clear currentLine:
-            currentLine = "";
-          }
-        }
-
-        else if (c != '\r') {    // if you got anything else but a carriage return character,
-          currentLine += c;      // add it to the end of the currentLine
-        }
-
-        // "On"
-        if (currentLine.endsWith("GET /1")) {
-        }
-
-        // "Off"
-        if (currentLine.endsWith("GET /0")) {
-        }
-
-        // Zeit erhöhen, hiernach wird die Seite mit dem neuen Wert ausgeliefert
-        if (currentLine.endsWith("GET /m")) {
-        }
-
-        // Zeit verringern, hiernach wird die Seite mit dem neuen Wert ausgeliefert
-        if (currentLine.endsWith("GET /l")) {
-        }
-      }
-    }
-
-    // close the connection:
-    client.stop();
-    Serial.println("client disconnected");
-  }
+  httpProcessRequests();
 
 }

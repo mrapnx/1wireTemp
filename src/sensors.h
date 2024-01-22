@@ -22,20 +22,14 @@ byte convertHexCStringToByte(const char* hexString) {
   // Erstelle einen temporären C-String mit den ersten beiden Zeichen des Eingabe-C-Strings
   char tempString[3];
   strncpy(tempString, hexString, 2);
-  Serial.print("tempString=");
-  Serial.println(tempString);
   // Stelle sicher, dass der temporäre C-String mit einem Null-Byte abgeschlossen ist
   tempString[2] = '\0';
 
   // Verwende strtol, um den hexadezimalen C-String in eine Ganzzahl (long) zu konvertieren
   long value = strtol(tempString, nullptr, 16);
-  Serial.print("value=");
-  Serial.println(value);
   
   // Konvertiere die Ganzzahl auf einen byte-Wert (0-255)
   byte result = static_cast<byte>(value);
-  Serial.print("result=");
-  Serial.println(result);
 
   return result;
 }
