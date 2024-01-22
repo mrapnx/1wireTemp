@@ -306,6 +306,9 @@ void htmlGetConfig() {
   client.print("<br/>");
   client.print("<br/>");
   client.print("<a href=\"/\">Zur&uuml;ck</a>");
+  client.print("<br/>");
+  client.print("<br/>");
+  client.print("<a href=\"load\">Konfig laden</a>");
   client.print("</body></html>");
 }
 
@@ -406,6 +409,11 @@ void httpProcessRequests() {
         if (currentLine.endsWith("GET /config")) {
           Serial.println("GET /config => Config");
           htmlGetConfig();
+          break;
+        }
+        if (currentLine.endsWith("GET /load")) {
+          Serial.println("GET /load => Load Config");
+          loadConfig();
           break;
         }
         if (currentLine.indexOf("POST") != -1) {
@@ -735,7 +743,7 @@ void setup() {
 
   // Konfig
   setupMemory();
-  loadConfig();
+  // loadConfig();  TODO: Klappt noch nicht
 
   // Display
   setupDisplay();
