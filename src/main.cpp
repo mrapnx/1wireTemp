@@ -15,27 +15,27 @@
 // *************** Konfig
 
 typedef struct {
+  char head[4] = "MRA";
   // WLAN
   boolean wifiActive = true;
-  char ssid[20] = "Arduino AP";
-  char pass[20] = "Arduino AP";
+  char ssid[21] = "Arduino AP";
+  char pass[21] = "Arduino AP";
   char mode = 'a'; // a = Access Point / c = Client
   int wifiTimeout = 10;
 
   // MQTT-Zugangsdaten
   boolean mqttActive = false;
-  char mqttServer[20] = "127.0.0.1"; // war: char *mqttServer
+  char mqttServer[21] = "127.0.0.1"; // war: char *mqttServer
   int mqttPort = 1883;
-  char mqttName[20] = "ArduinoClient";
-  char mqttUser[20] = "ArudinoNano";
-  char mqttPassword[20] = "DEIN_MQTT_PASSWORT";
+  char mqttName[21] = "ArduinoClient";
+  char mqttUser[21] = "ArudinoNano";
+  char mqttPassword[21] = "DEIN_MQTT_PASSWORT";
   
 } Config;
 
 // Einstellungen
 int     xBegin     = 0;
 int     yBegin     = 10;
-const int WRITTEN_SIGNATURE = 0xBEEFDEED;
 
 // Display
                       // Rot   LED   +3.3V
@@ -109,9 +109,10 @@ boolean sensorsFine();
 boolean wifiFine();
 boolean checkWiFi();
 boolean connectToMQTT();
-void loadConfig();
+boolean loadConfig();
 void saveConfig();
-void printConfig();
+void printConfig(Config &pconfig);
+void(* reboot) (void) = 0; //declare reset function @ address 0
 
 // Sensorlisten-Methoden
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value);
@@ -174,44 +175,45 @@ char* getValue(const String& data, const char* key) {
   return result;
 }
 
-void printConfig() {
+void printConfig(Config &pconfig) {
   Serial.println("printConfig() begin");
 
   Serial.print("wifiActive: ");
-  Serial.println(int(config.wifiActive));
+  Serial.println(int(pconfig.wifiActive));
 
   Serial.print("ssid: ");
-  Serial.println(config.ssid);
+  Serial.println(pconfig.ssid);
 
   Serial.print("pass: ");
-  Serial.println(config.pass);
+  Serial.println(pconfig.pass);
 
   Serial.print("mode: ");
-  Serial.println(config.mode);
+  Serial.println(pconfig.mode);
 
   Serial.print("wifiTimeout: ");
-  Serial.println(config.wifiTimeout);
+  Serial.println(pconfig.wifiTimeout);
 
   Serial.print("mqttActive: ");
-  Serial.println(int(config.mqttActive));
+  Serial.println(int(pconfig.mqttActive));
 
   Serial.print("mqttServer: ");
-  Serial.println(config.mqttServer);
+  Serial.println(pconfig.mqttServer);
 
   Serial.print("mqttPort: ");
-  Serial.println(config.mqttPort);
+  Serial.println(pconfig.mqttPort);
 
   Serial.print("mqttName: ");
-  Serial.println(config.mqttName);
+  Serial.println(pconfig.mqttName);
 
   Serial.print("mqttUser: ");
-  Serial.println(config.mqttUser);
+  Serial.println(pconfig.mqttUser);
 
   Serial.print("mqttPassword: ");
-  Serial.println(config.mqttPassword);
+  Serial.println(pconfig  .mqttPassword);
 
   Serial.println("printConfig() end");
 }
+
 
 void clearSensorList() {
   // Befreie den Speicher von sensorList
@@ -230,36 +232,38 @@ void saveConfig() {
    // Save into emulated-EEPROM the number increased by 1 for the next run of the sketch
 
   Serial.println("Saving config:");
-  printConfig();
+  printConfig(config);
   EEPROM.put(0, config);
 
   if (!EEPROM.getCommitASAP()) {
     Serial.println("CommitASAP not set. Need commit()");
     EEPROM.commit();
-  } else {
-    Serial.println("Done writing to emulated EEPROM. You can reset now");
   }
   Serial.println("saveConfig() end");
 }
 
 
-void loadConfig() {
-  int signature;
+boolean loadConfig() {
   Config tempConfig;
+  boolean returnValue = false;
 
   Serial.println("loadConfig() begin");
-   // configStorage.read(config);
-  // Read the content of emulated-EEPROM
   Serial.println("Loading Config");
+  // Lies den EEPROM bei Adresse 0 aus
   EEPROM.get(0, tempConfig);
-  if (signature = WRITTEN_SIGNATURE) {
-    config = tempConfig;
+  // Die Struct enthält als erstes immer den C-String "MRA". Prüfe darauf.
+  if (strcmp(tempConfig.head, "MRA") == 0) {
     Serial.println("Config successfully loaded:");
-    printConfig();
+    config = tempConfig;
+    printConfig(config);
+    returnValue = true;
   } else {
-    Serial.println("Config could not be loaded");
+    Serial.println("Config could not be loaded, got:");
+    printConfig(tempConfig);
+    returnValue = false;
   }
   Serial.println("loadConfig() end");
+  return returnValue;
 }
 
 void htmlGetHeader(int refresh) {
@@ -303,6 +307,9 @@ void htmlGetConfig() {
 
   client.print("<input type='submit' value='Speichern'>");
   client.print("</form>");
+  client.print("<br/>");
+  client.print("<br/>");
+  // client.print("<a href=\"/reboot\">Neustart</a>"); // TODO: Klappt noch nicht
   client.print("<br/>");
   client.print("<br/>");
   client.print("<a href=\"/\">Zur&uuml;ck</a>");
@@ -405,25 +412,38 @@ void httpProcessRequests() {
           currentLine += c;      // add it to the end of the currentLine
         }
 
-        // "Config"
+        // "Konfiguration anzeigen"
         if (currentLine.endsWith("GET /config")) {
           Serial.println("GET /config => Config");
           htmlGetConfig();
           break;
         }
+
+        // "Konfiguration laden"
         if (currentLine.endsWith("GET /load")) {
           Serial.println("GET /load => Load Config");
-          loadConfig();
+          htmlGetHeader(0);
+          client.print("<html><body>");
+          if (loadConfig()) {
+            client.print("Konfig erfolgreich geladen<br/><br/>");
+          } else {
+            client.print("Konfig konnte nicht geladen werden<br/><br/>");
+          }          
+          client.print("<a href=\"/\">Zur&uuml;ck</a>");
+          client.print("</body></html>");
           break;
         }
+
+        // "Konfiguration speichern"
         if (currentLine.indexOf("POST") != -1) {
           htmlSetConfig();
           htmlGetConfig();
           break;
         }
-        // "Off"
-        if (currentLine.endsWith("GET /0")) {
-          Serial.println("GET /0 => ??");
+
+        // "Neustarten"
+        if (currentLine.endsWith("GET /reboot")) {
+          reboot();
         }
 
       } else {
@@ -540,14 +560,14 @@ void removeSensor(SensorAddress address) {
 }
 
 void setupDisplay() {
-  Serial.println("setup() Initialisiere Display");
-
+  Serial.println("setupDisplay() begin");
   tft.begin();
   tft.setBitrate(24000000);
   tft.clearScreen();
   tft.defineScrollArea(128, 128);
   tft.setCursor(xBegin, yBegin);
   tft.println("Start");
+  Serial.println("setupDisplay() end");
 }
 
 boolean wifiFine() {
@@ -743,7 +763,7 @@ void setup() {
 
   // Konfig
   setupMemory();
-  // loadConfig();  TODO: Klappt noch nicht
+  loadConfig();
 
   // Display
   setupDisplay();
