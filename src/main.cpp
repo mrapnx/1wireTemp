@@ -31,6 +31,8 @@ typedef struct {
   char mqttUser[21] = "ArudinoNano";
   char mqttPassword[21] = "DEIN_MQTT_PASSWORT";
   
+  // Sensor-Konfiguration
+  SensorConfig sensorConfig[sensorConfigCount];  
 } Config;
 
 // Einstellungen
@@ -81,6 +83,7 @@ boolean blinking = false;
 // 1-Wire
 SensorData* sensorList = nullptr;  // Zeiger auf das Array von SensorData
 int numberOfSensors = 0; // Aktuelle Anzahl von Sensoren
+
 byte addrArray[8];
 OneWire oneWire(PinOneWireBus);
 DallasTemperature sensors(&oneWire);
@@ -211,6 +214,17 @@ void printConfig(Config &pconfig) {
   Serial.print("mqttPassword: ");
   Serial.println(pconfig  .mqttPassword);
 
+  for (int i = 0; i < sensorConfigCount; i++) {
+    Serial.print("sensorConfig");  
+    Serial.print(i);  
+    Serial.print(": Address: ");  
+    Serial.print(config.sensorConfig[i].address);  
+    Serial.print(" Name: ");  
+    Serial.print(config.sensorConfig[i].name);  
+    Serial.print(" Format: ");  
+    Serial.println(config.sensorConfig[i].format);  
+  }
+
   Serial.println("printConfig() end");
 }
 
@@ -294,7 +308,7 @@ void htmlGetConfig() {
   client.print("<form method='post' action='/update'>");
   client.print("<p>WLAN aktiv: <input type='checkbox' name='wifiActive' " + String(config.wifiActive ? "checked" : "") + "></p>");
   client.print("<p>SSID: <input type='text' name='ssid' value='" + String(config.ssid) + "'></p>");
-  client.print("<p>Passwort: <input type='password' name='pass' value='" + String(config.pass) + "'></p>");
+  client.print("<p>Passwort: <input type='text' name='pass' value='" + String(config.pass) + "'></p>");
   client.print("<p>Modus (a=Access Point, c=Client): <input type='text' name='mode' value='" + String(config.mode) + "'></p>");
   client.print("<p>WLAN Timeout: <input type='text' name='wifiTimeout' value='" + String(config.wifiTimeout) + "'></p>");
 
@@ -303,7 +317,24 @@ void htmlGetConfig() {
   client.print("<p>MQTT Port: <input type='text' name='mqttPort' value='" + String(config.mqttPort) + "'></p>");
   client.print("<p>MQTT Name: <input type='text' name='mqttName' value='" + String(config.mqttName) + "'></p>");
   client.print("<p>MQTT Benutzer: <input type='text' name='mqttUser' value='" + String(config.mqttUser) + "'></p>");
-  client.print("<p>MQTT Passwort: <input type='password' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
+  client.print("<p>MQTT Passwort: <input type='text' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
+
+  client.print("<p/>");
+  client.print("<table>");
+  client.print("<th></th>");
+  client.print("<th>Adresse</th>");
+  client.print("<th>Name</th>");
+  client.print("<th>Format</th>");
+  for (int i = 0; i < sensorConfigCount; i++) {
+    client.print("<tr>");  
+    client.print("<td>" + String(i) + "</td>");  
+    client.print("<td><input type='text' name='sensorAddress" + String(i) + "' value='" + String(config.sensorConfig[i].address) + "'></td>");  
+    client.print("<td><input type='text' name='sensorName"    + String(i) + "' value='" + String(config.sensorConfig[i].name)    + "'></td>");  
+    client.print("<td><input type='text' name='sensorFormat"  + String(i) + "' value='" + String(config.sensorConfig[i].format)  + "'></td>");  
+    client.print("</tr>");  
+  }
+  client.print("</table>");
+
 
   client.print("<input type='submit' value='Speichern'>");
   client.print("</form>");
@@ -346,6 +377,25 @@ void htmlSetConfig() {
   strcpy(config.mqttName, getValue(body, "mqttName"));
   strcpy(config.mqttUser, getValue(body, "mqttUser"));
   strcpy(config.mqttPassword, getValue(body, "mqttPassword"));
+
+  for (int i = 0; i < sensorConfigCount; i++) {
+    char no[2];
+    char name[17];
+    itoa(i, no, 10);
+
+    strcpy(name, "sensorAddress");
+    strcat(name, no);
+    strcpy(config.sensorConfig[i].address, getValue(body, name));
+
+    strcpy(name, "sensorName");
+    strcat(name, no);
+    strcpy(config.sensorConfig[i].name, getValue(body, name));
+
+    strcpy(name, "sensorFormat");
+    strcat(name, no);
+    strcpy(config.sensorConfig[i].format, getValue(body, name));
+  }
+
   saveConfig();
   Serial.println("htmlSetConfig() begin");
 }
@@ -524,9 +574,20 @@ boolean getSensorType(const SensorAddress address, SensorType& type) {
 }
 
 void getSensorName(const SensorAddress address, SensorName name) {
-  // TODO: Dummy Funktion
-  strcpy(name, address);
-  strcat(name, ".");
+  strcpy(name, "");
+  // Tacker durch das sensorConfig Array in config durch
+  for (int i = 0; i < sensorConfigCount; i++) {
+    // Vergleich die Adresse aus dem Parameter mit der in der Config
+    if (strcmp(address, config.sensorConfig[i].address) == 0) {
+      // Und gib bei Übereinstimmung den Namen zurück
+      strcpy(name, config.sensorConfig[i].name);
+      Serial.print("getSensorName(): Sensor gefunden: Adresse=");
+      Serial.print(address);
+      Serial.print(" name=");
+      Serial.println(name);
+      break;
+    }
+  }
 }
 
 void removeSensor(SensorAddress address) {
@@ -780,10 +841,6 @@ void setup() {
 
   outputSensors();
 
-  // Debug
-  strcpy(sensorList[0].name, "Temp");
-  strcpy(sensorList[1].name, "Fuellstand");
-
   tft.clearScreen();
 }
 
@@ -878,14 +935,14 @@ boolean checkWiFi() {
 }
 
 void setupMemory() {
-  Serial.println("setupMemory()");
+  Serial.println("setupMemory() begin");
   Serial.print("Board: ");
   Serial.println(BOARD_NAME);
   Serial.print("Flash and SAMD Version: ");
   Serial.println(FLASH_STORAGE_SAMD_VERSION);
   Serial.print("EEPROM length: ");
   Serial.println(EEPROM.length());
-  Serial.println("setupMemory()");
+  Serial.println("setupMemory() end");
 }
 
 void setupWifi() {

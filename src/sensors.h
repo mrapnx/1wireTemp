@@ -4,12 +4,22 @@
 typedef char SensorAddress[17];
 typedef char SensorType;
 typedef char SensorName[21];
+typedef char SensorValueFormat[11];
 struct SensorData {
-  SensorAddress address;
-  SensorType type;
-  SensorName name;
+  SensorAddress     address = "";
+  SensorType        type    = '.';
+  SensorName        name    = "";
+  SensorValueFormat format  = "";
   float value;
 };
+
+struct SensorConfig {
+  SensorAddress     address = "";
+  SensorName        name    ="";
+  SensorValueFormat format  = "";
+};
+
+const int sensorConfigCount = 10;
 
 byte convertHexCStringToByte(const char* hexString);
 String deviceAddrToStr(DeviceAddress addr);
