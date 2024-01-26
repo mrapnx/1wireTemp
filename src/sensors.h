@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include <DallasTemperature.h>
 
-typedef char SensorAddress[17];
+typedef char SensorAddress    [17];
 typedef char SensorType;
-typedef char SensorName[21];
+typedef char SensorName       [21];
 typedef char SensorValueFormat[11];
 struct SensorData {
   SensorAddress     address = "";
@@ -21,13 +21,14 @@ struct SensorConfig {
 
 const int sensorConfigCount = 10;
 
+// *************** Deklaration der Funktionen
 byte convertHexCStringToByte(const char* hexString);
 String deviceAddrToStr(DeviceAddress addr);
 void deviceAddrToStrNew(const DeviceAddress addr, String out);
 const char* deviceAddrToChar(DeviceAddress addr); 
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType);
 
-
+// ***************  Funktionen
 byte convertHexCStringToByte(const char* hexString) {
   // Erstelle einen temporären C-String mit den ersten beiden Zeichen des Eingabe-C-Strings
   char tempString[3];
