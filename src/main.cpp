@@ -147,24 +147,25 @@ void setup();
 
 // ***************  Funktionen
 char* getValue(const String& data, const char* key) {
+  static char result[100]; // Annahme: Der Wert passt in einen 100-Byte-Puffer
   String delimiter = "=";
   int keyIndex = data.indexOf(key + delimiter);
+  int endIndex;
 
   Serial.print("getValue(");
   Serial.print(key);
   Serial.println(") begin");
   if (keyIndex == -1) {
-    return "";  // Wenn der Schlüssel nicht gefunden wurde, leeres C-String zurückgeben
+    return nullptr;  // Wenn der Schlüssel nicht gefunden wurde, leeres C-String zurückgeben
   }
 
   keyIndex += strlen(key) + delimiter.length();
 
-  int endIndex = data.indexOf('&', keyIndex);
+  endIndex = data.indexOf('&', keyIndex);
   if (endIndex == -1) {
     endIndex = data.length();
   }
 
-  static char result[100]; // Annahme: Der Wert passt in einen 100-Byte-Puffer
   data.substring(keyIndex, endIndex).toCharArray(result, sizeof(result));
 
   // Füge den nullterminierenden Zeichen manuell hinzu
@@ -372,11 +373,14 @@ void htmlGetConfig() {
 }
 
 void htmlSetConfig() {
+  char c;
+  char no[2];
+  char name[17];
   Serial.println("htmlSetConfig() begin");
   // Lese den HTTP-Body, der die aktualisierten Daten enthält
   String body = "";
   while (client.available()) {
-    char c = client.read();
+    c = client.read();
     body += c;
   }
   Serial.print("body: ");
@@ -400,8 +404,6 @@ void htmlSetConfig() {
   strcpy(config.mqttPassword, getValue(body, "mqttPassword"));
 
   for (int i = 0; i < sensorConfigCount; i++) {
-    char no[2];
-    char name[17];
     itoa(i, no, 10);
 
     strcpy(name, "sensorAddress");
@@ -450,7 +452,6 @@ char c;
       Serial.println("Device disconnected from AP");
     }
   }
-
 
   // Verarbeite HTTP-Anfragen
   client = server.available();
@@ -547,9 +548,9 @@ void printSensors() {
 }
 
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value) {
-  Serial.println("addSensor(): begin");
-
   SensorData* tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
+
+  Serial.println("addSensor(): begin");
 
   // Übertrage vorhandene Daten in das temporäre Array
   for (int i = 0; i < numberOfSensors; i++) {
@@ -557,7 +558,6 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   }
 
   // Füge das neue Sensorobjekt hinzu
-  //tempArray[numberOfSensors] = {*address, *name, *type, value};
   strcpy(tempArray[numberOfSensors].address, address);
   strcpy(tempArray[numberOfSensors].name, name);
   tempArray[numberOfSensors].type = type;
@@ -753,13 +753,13 @@ SensorType type;
 }
 
 void setup1Wire() {
-byte addrArray[8];
-float value;
-String address;
-SensorAddress addressC;
-SensorName nameC;
-SensorType typeC;
-DeviceAddress addr;
+  byte addrArray[8];
+  float value;
+  String address;
+  SensorAddress addressC;
+  SensorName nameC;
+  SensorType typeC;
+  DeviceAddress addr;
 
     // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
   if (oneWire.search(addrArray)) {
@@ -767,7 +767,6 @@ DeviceAddress addr;
     tft.println("Keine Geräte gefunden");
     Serial.println("Keine Geräte gefunden");
   }
-
 
   // Starte Objekt für Temperatur-Sensoren
   sensors.begin();
@@ -821,13 +820,15 @@ DeviceAddress addr;
 
 String getValuesAsHtml() {
 // TODO: Informationen aus der sensorList beziehen
-  Serial.println("getValuesAsHtml() begin");
   String address;
   String temp;
   DeviceAddress addr;
   String returnString = "";
+  float tempC;
+
+  Serial.println("getValuesAsHtml() begin");
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
-    float tempC = sensors.getTempCByIndex(i);
+    tempC = sensors.getTempCByIndex(i);
     sensors.getAddress(addr, i);
     address = deviceAddrToStr(addr);
     temp = String(tempC);
@@ -847,7 +848,7 @@ void setup() {
 
   // Konfig
   setupMemory();
-  loadConfig();
+  loadConfig(); // Achtung! Schlägt direkt nach dem Upload fehl
 
   // Display
   setupDisplay();
@@ -868,14 +869,12 @@ void setup() {
 }
 
 void printWiFiStatus() {
-int serverStatus;
-
   Serial.println("printWiFiStatus() begin");
 
   Serial.print("SSID: ");
   Serial.println(WiFi.SSID());
 
-  if (config.wifiMode = 'a') {
+  if (config.wifiMode == 'a') {
     Serial.print("Password: ");
     Serial.println(config.wifiPass);
   };
@@ -885,10 +884,7 @@ int serverStatus;
   Serial.println(ip);
 
   Serial.print("Server Status: ");
-  serverStatus = server.status();
-  Serial.println(serverStatus);
-  Serial.print("IP-Address: http://");
-  Serial.println(ip);
+  Serial.println(server.status());
   Serial.println("printWiFiStatus() end");
 }
 
@@ -1001,8 +997,10 @@ boolean connectToMQTT() {
     } else {
       Serial.print("connectToMQTT(): Verbindung mit MQTT-Server fehlgeschlagen, rc=");
       Serial.println(mqttClient.state());
+      return false;
     }
   }
+  return false;
 }
 
 void displayValues() {
