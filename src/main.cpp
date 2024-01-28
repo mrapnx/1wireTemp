@@ -6,16 +6,39 @@
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
 #include <SPI.h>
+#include <FlashStorage_SAMD.h>
 #include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
+#include <DS2438.h>
 #include "sensors.h"
+#include "wifi.h"
 
-// *************** Konfig
+// *************** Konfig-Grundeinstellungen
+typedef struct {
+  char    head           [5] = "MRAb";
+  // WLAN
+  boolean wifiActive         = true;
+  char    wifiMode           = 'a'; // a = Access Point / c = Client
+  int     wifiTimeout        = 10;
+  char    wifiSsid      [21] = "ArduinoAP";
+  char    wifiPass      [21] = "ArduinoAP";
 
-// Einstellungen
-boolean wifiActive = false;
-boolean mqttActive = false;
-int     xBegin     = 0;
-int     yBegin     = 10;
+  // MQTT-Zugangsdaten
+  boolean mqttActive         = false;
+  char    mqttServer    [21] = "127.0.0.1"; // war: char *mqttServer
+  int     mqttPort           = 1883;
+  char    mqttName      [21] = "ArduinoClient";
+  char    mqttUser      [21] = "ArudinoNano";
+  char    mqttPassword  [21] = "DEIN_MQTT_PASSWORT";
+  
+  // Sensor-Konfiguration
+  SensorConfig sensorConfig[sensorConfigCount];  
+
+  char    foot           [5] = "MRAe";
+} Config;
+
+// WLAN-Port
+const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
+
 
 // Display
                       // Rot   LED   +3.3V
@@ -27,36 +50,30 @@ int     yBegin     = 10;
                       // Schw. GND   GND
                       // Rot   VCC   +3.3V                     
 #define TFT_MISO 12   //   - D12
+int     xBegin     = 0;
+int     yBegin     = 10;
 
-// WLAN-Zugangsdaten
-char ssid[] = "Muspelheim";
-char pass[] = "dRN4wlan5309GTD9fR";
-const int wifiTimeout = 10; // Timeout zur Verbindung mit dem WLAN in Sek
-const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 
-// MQTT-Zugangsdaten
-const char *mqttServer = "192.168.66.21";
-const int mqttPort = 1883;
-const char *mqttName = "ArduinoClient";
-const char *mqttUser = "ArudinoNano";
-const char *mqttPassword = "DEIN_MQTT_PASSWORT";
-
-// Pin, an dem der 1-Wire-Bus angeschlossen ist
-const int PinOneWireBus = 10; // = D10
+// 1-Wire
+const int PinOneWireBus = 10; // Pin, an dem der 1-Wire-Bus angeschlossen ist // = D10
+uint8_t DS2438_address[] = { 0x26, 0x2c, 0xc4, 0x2c, 0x00, 0x00, 0x00, 0xf5 }; // Adresse des DS2438 
 
 // Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
 const int wifiCheckInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen abgefragt werden
-const int tempCheckInterval = 10;
+const int tempCheckInterval = 15;
+// Frequenz in Sekunden, in der die Füllstände abgefragt werden
+const int levelCheckInterval = 15;
 // Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
 const int sendInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen angezeigt werden
-const int displayInterval = 1;
+const int displayInterval = 10;
 // Frequenz, in der die orange LED bei Fehlern blinkt in ms
 const int blinkInterval = 500; 
 
 // ***************  Globale Variablen
 unsigned long tempCheckLast = 0;
+unsigned long levelCheckLast = 0;
 unsigned long sendLast = 0;
 unsigned long displayLast = 0;
 unsigned long wifiCheckLast = 0;
@@ -64,15 +81,17 @@ unsigned long blinkLast = 0;
 boolean blinking = false;
 
 // 1-Wire
-SensorData* sensorList = nullptr;  // Zeiger auf das Array von SensorData
-int numberOfSensors = 0; // Aktuelle Anzahl von Sensoren
-byte addrArray[8];
-OneWire oneWire(PinOneWireBus);
-DallasTemperature sensors(&oneWire);
+SensorData* sensorList = nullptr;         // Zeiger auf das Array von SensorData
+int numberOfSensors = 0;                  // Aktuelle Anzahl von Sensoren
+OneWire oneWire(PinOneWireBus);           // 1-Wire Grundobjekt
+DallasTemperature sensors(&oneWire);      // 1-Wire Objekt für Temperatursensoren
+DS2438 ds2438(&oneWire, DS2438_address);  // 1-Wire Objekt für DS2438-Sensoren
 
 // Webserver
 IPAddress   ip; 
 WiFiServer  server(wifiPort);
+WiFiClient  client; 
+int         status = WL_IDLE_STATUS;
 
 // MQTT-Client
 WiFiClient   wifiClient;
@@ -81,11 +100,19 @@ PubSubClient mqttClient(wifiClient);
 // Display
 TFT_ILI9163C tft = TFT_ILI9163C(TFT_CS, TFT_DC, TFT_RST);
 
+// Speicher
+FlashStorage(configStorage, Config);
+Config config;
+
 // *************** Deklaration der Funktionen
 boolean sensorsFine();
 boolean wifiFine();
 boolean checkWiFi();
 boolean connectToMQTT();
+boolean loadConfig();
+void saveConfig();
+void printConfig(Config &pconfig);
+void copyConfig(const Config &from, Config &to);
 
 // Sensorlisten-Methoden
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value);
@@ -93,22 +120,139 @@ void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
 void clearSensorList();
 void getSensorName(const SensorAddress address, SensorName); 
+boolean getSensorType(const SensorAddress address, SensorType& type);
 
 // Ein- & Ausgabe-Methoden
-void outputSensors();
 void getTemperatures();
-void displayTemperatures(); 
-String getTemperatureAsHtml();
-void sendTemperaturesToMQTT();
+void getLevels();
+void printSensors();
 void printSensorAddresses();
 void printWiFiStatus();
+void displayValues(); 
+void sendTemperaturesToMQTT();
+char* getValue(const String& data, const char* key);
+String getValuesAsHtml();
+void htmlGetHeader(int refresh);
+void htmlGetStatus();
+void htmlGetConfig();
+void htmlSetConfig();
+void httpProcessRequests();
 
 //  Setup-Methoden
 void setup1Wire(); 
 void setupDisplay();
+void setupMemory();
+void setupWifi();
 void setup();
 
 // ***************  Funktionen
+char* getValue(const String& data, const char* key) {
+  static char result[100]; // Annahme: Der Wert passt in einen 100-Byte-Puffer
+  String delimiter = "=";
+  int keyIndex = data.indexOf(key + delimiter);
+  int endIndex;
+
+  Serial.print("getValue(");
+  Serial.print(key);
+  Serial.println(") begin");
+  if (keyIndex == -1) {
+    return nullptr;  // Wenn der Schlüssel nicht gefunden wurde, leeres C-String zurückgeben
+  }
+
+  keyIndex += strlen(key) + delimiter.length();
+
+  endIndex = data.indexOf('&', keyIndex);
+  if (endIndex == -1) {
+    endIndex = data.length();
+  }
+
+  data.substring(keyIndex, endIndex).toCharArray(result, sizeof(result));
+
+  // Füge den nullterminierenden Zeichen manuell hinzu
+  result[sizeof(result) - 1] = '\0';
+
+  Serial.print("getValue() end: ");
+  Serial.println(result);
+  return result;
+}
+
+void copyConfig(const Config &from, Config &to) {
+  Serial.println("copyConfig() begin");
+  // WiFi
+         to.wifiActive   = from.wifiActive;
+         to.wifiMode     = from.wifiMode;
+         to.wifiTimeout  = from.wifiTimeout;
+  strcpy(to.wifiSsid,      from.wifiSsid);
+  strcpy(to.wifiPass,      from.wifiPass);
+
+  // MQTT
+         to.mqttActive   = from.mqttActive;
+  strcpy(to.mqttServer,    from.mqttServer);
+  strcpy(to.mqttUser,      from.mqttUser);
+         to.mqttPort     = from.mqttPort;
+  strcpy(to.mqttName,      from.mqttName);
+  strcpy(to.mqttPassword,  from.mqttPassword);
+  
+  // Sensor-Konfig
+  for (int i = 0; i < sensorConfigCount; i++) {
+    strcpy(to.sensorConfig[i].address, from.sensorConfig[i].address);  
+    strcpy(to.sensorConfig[i].name,    from.sensorConfig[i].name);  
+    strcpy(to.sensorConfig[i].format,  from.sensorConfig[i].format);  
+  }
+  Serial.println("copyConfig() end");
+};
+
+void printConfig(Config &pconfig) {
+  Serial.println("printConfig() begin");
+
+  Serial.print("wifiActive: ");
+  Serial.println(int(pconfig.wifiActive));
+
+  Serial.print("ssid: ");
+  Serial.println(pconfig.wifiSsid);
+
+  Serial.print("pass: ");
+  Serial.println(pconfig.wifiPass);
+
+  Serial.print("mode: ");
+  Serial.println(pconfig.wifiMode);
+
+  Serial.print("wifiTimeout: ");
+  Serial.println(pconfig.wifiTimeout);
+
+  Serial.print("mqttActive: ");
+  Serial.println(int(pconfig.mqttActive));
+
+  Serial.print("mqttServer: ");
+  Serial.println(pconfig.mqttServer);
+
+  Serial.print("mqttPort: ");
+  Serial.println(pconfig.mqttPort);
+
+  Serial.print("mqttName: ");
+  Serial.println(pconfig.mqttName);
+
+  Serial.print("mqttUser: ");
+  Serial.println(pconfig.mqttUser);
+
+  Serial.print("mqttPassword: ");
+  Serial.println(pconfig  .mqttPassword);
+
+  for (int i = 0; i < sensorConfigCount; i++) {
+    Serial.print("sensorConfig");  
+    Serial.print(i);  
+    Serial.print(": Address: ");  
+    Serial.print(pconfig.sensorConfig[i].address);  
+    Serial.print(" Name: ");  
+    Serial.print(pconfig.sensorConfig[i].name);  
+    Serial.print(" Format: ");  
+    Serial.println(pconfig.sensorConfig[i].format);  
+  }
+
+  Serial.println("printConfig() end");
+}
+
+
 void clearSensorList() {
   // Befreie den Speicher von sensorList
   free(sensorList);
@@ -120,7 +264,276 @@ void clearSensorList() {
   sensorList = nullptr;
 }
 
-void outputSensors() {
+void saveConfig() {
+  Serial.println("saveConfig() begin");
+
+  Serial.println("Speichere Konfig:");
+  printConfig(config);
+  EEPROM.put(0, config);
+
+  if (!EEPROM.getCommitASAP()) {
+    Serial.println("CommitASAP nicht gesetzt, führe commit() aus.");
+    EEPROM.commit();
+  }
+  Serial.println("saveConfig() end");
+}
+
+
+boolean loadConfig() {
+  Config tempConfig;
+  boolean returnValue = false;
+
+  Serial.println("loadConfig() begin");
+  Serial.println("Lade Konfig");
+  // Lies den EEPROM bei Adresse 0 aus
+  EEPROM.get(0, tempConfig);
+  // Die Struct enthält als erstes immer den C-String "MRA-b" und als letztes immer "MRA-e". Prüfe darauf.
+  if (strcmp(tempConfig.head, "MRAb") == 0 && (strcmp(tempConfig.foot, "MRAe") == 0)) {
+    Serial.println("Konfig erfolgreich geladen:");
+    copyConfig(tempConfig, config);
+    printConfig(config);
+    returnValue = true;
+  } else {
+    Serial.println("Konfig konnte nicht geladen werden, habe folgendes erhalten:");
+    printConfig(tempConfig);
+    returnValue = false;
+  }
+  Serial.println("loadConfig() end");
+  return returnValue;
+}
+
+void htmlGetHeader(int refresh) {
+  // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
+  // and a content-type so the client knows what's coming, then a blank line:
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:text/html");
+  client.println();
+
+  // the content of the HTTP response follows the header:
+  client.print("<html>");
+  client.print("<head>");
+  if (refresh > 0) {
+    client.print("<meta http-equiv=\"refresh\" content=\"");
+    client.print(refresh);
+    client.print("; url=http://");
+    client.print(ip); 
+    client.print("/\"/>");
+  }
+  client.print("</head>");
+}
+
+
+void htmlGetConfig() {
+  htmlGetHeader(0);
+  client.print("<html><body>");
+  client.print("<h1>Konfiguration</h1>");
+  client.print("<form method='post' action='/update'>");
+  client.print("<p>WLAN aktiv: <input type='checkbox' name='wifiActive' " + String(config.wifiActive ? "checked" : "") + "></p>");
+  client.print("<p>SSID: <input type='text' name='wifiSsid' value='" + String(config.wifiSsid) + "'></p>");
+  client.print("<p>Passwort: <input type='text' name='wifiPass' value='" + String(config.wifiPass) + "'></p>");
+  client.print("<p>Modus (a=Access Point, c=Client): <input type='text' name='wifiMode' value='" + String(config.wifiMode) + "'></p>");
+  client.print("<p>WLAN Timeout: <input type='text' name='wifiTimeout' value='" + String(config.wifiTimeout) + "'></p>");
+
+  client.print("<p>MQTT aktiv: <input type='checkbox' name='mqttActive' " + String(config.mqttActive ? "checked" : "") + "></p>");
+  client.print("<p>MQTT Server: <input type='text' name='mqttServer' value='" + String(config.mqttServer) + "'></p>");
+  client.print("<p>MQTT Port: <input type='text' name='mqttPort' value='" + String(config.mqttPort) + "'></p>");
+  client.print("<p>MQTT Name: <input type='text' name='mqttName' value='" + String(config.mqttName) + "'></p>");
+  client.print("<p>MQTT Benutzer: <input type='text' name='mqttUser' value='" + String(config.mqttUser) + "'></p>");
+  client.print("<p>MQTT Passwort: <input type='text' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
+
+  client.print("<p/>");
+  client.print("<table>");
+  client.print("<th></th>");
+  client.print("<th>Adresse</th>");
+  client.print("<th>Name</th>");
+  client.print("<th>Format</th>");
+  for (int i = 0; i < sensorConfigCount; i++) {
+    client.print("<tr>");  
+    client.print("<td>" + String(i) + "</td>");  
+    client.print("<td><input type='text' name='sensorAddress" + String(i) + "' value='" + String(config.sensorConfig[i].address) + "'></td>");  
+    client.print("<td><input type='text' name='sensorName"    + String(i) + "' value='" + String(config.sensorConfig[i].name)    + "'></td>");  
+    client.print("<td><input type='text' name='sensorFormat"  + String(i) + "' value='" + String(config.sensorConfig[i].format)  + "'></td>");  
+    client.print("</tr>");  
+  }
+  client.print("</table>");
+
+
+  client.print("<input type='submit' value='Speichern'>");
+  client.print("</form>");
+  client.print("<br/>");
+  client.print("<br/>");
+  // client.print("<a href=\"/reboot\">Neustart</a>"); // TODO: Klappt noch nicht
+  client.print("<br/>");
+  client.print("<br/>");
+  client.print("<a href=\"/\">Zur&uuml;ck</a>");
+  client.print("<br/>");
+  client.print("<br/>");
+  client.print("<a href=\"load\">Konfig laden</a>");
+  client.print("</body></html>");
+}
+
+void htmlSetConfig() {
+  char c;
+  char no[2];
+  char name[17];
+  Serial.println("htmlSetConfig() begin");
+  // Lese den HTTP-Body, der die aktualisierten Daten enthält
+  String body = "";
+  while (client.available()) {
+    c = client.read();
+    body += c;
+  }
+  Serial.print("body: ");
+  Serial.println(body);
+
+  // Extrahiere die aktualisierten Werte aus dem HTTP-Body
+  config.wifiActive = body.indexOf("wifiActive=on") != -1;
+
+  strcpy(config.wifiSsid, getValue(body, "wifiSsid"));
+  strcpy(config.wifiPass, getValue(body, "wifiPass"));
+  config.wifiMode = getValue(body, "wifiMode")[0];
+  config.wifiTimeout = atoi(getValue(body, "wifiTimeout")); // Umwandlung in Integer
+
+  config.mqttActive = body.indexOf("mqttActive=on") != -1;
+  strcpy(config.mqttServer, getValue(body, "mqttServer"));
+  Serial.print("mqttServer: ");
+  Serial.println(config.mqttServer);
+  config.mqttPort = atoi(getValue(body, "mqttPort")); // Umwandlung in Integer
+  strcpy(config.mqttName, getValue(body, "mqttName"));
+  strcpy(config.mqttUser, getValue(body, "mqttUser"));
+  strcpy(config.mqttPassword, getValue(body, "mqttPassword"));
+
+  for (int i = 0; i < sensorConfigCount; i++) {
+    itoa(i, no, 10);
+
+    strcpy(name, "sensorAddress");
+    strcat(name, no);
+    strcpy(config.sensorConfig[i].address, getValue(body, name));
+
+    strcpy(name, "sensorName");
+    strcat(name, no);
+    strcpy(config.sensorConfig[i].name, getValue(body, name));
+
+    strcpy(name, "sensorFormat");
+    strcat(name, no);
+    strcpy(config.sensorConfig[i].format, getValue(body, name));
+  }
+
+  saveConfig();
+  Serial.println("htmlSetConfig() begin");
+}
+
+void htmlGetStatus() {
+  htmlGetHeader(2);
+  // client.print("<html><body>");  // ohne  korrektem html und body passt die Schriftgröße irgendwie immer
+  client.print("<p style=\"font-size:80px; font-family: monospace\">"); 
+  client.print("Sensoren: </br>");
+  client.print(getValuesAsHtml());
+  client.print("<br/>");
+  client.print("<a href=\"/config\">Konfiguration</a><br/>");
+  client.print("</p>");
+  client.print("</html>");
+
+  // Die HTTP response endet mit einer weiteren Leerzeile:
+  client.println();
+}
+
+void httpProcessRequests() {
+String currentLine = "";
+char c;
+
+  // Vergleich den aktuellen mit dem vorherigen Status
+  if (status != WiFi.status()) {
+    // Wenn sie sich geändert hat, persistiere den Zustand
+    status = WiFi.status();
+    if (status == WL_AP_CONNECTED) {
+      Serial.println("Device connected to AP");
+    } else {
+      Serial.println("Device disconnected from AP");
+    }
+  }
+
+  // Verarbeite HTTP-Anfragen
+  client = server.available();
+  // Wenn sich ein Client verbunden hat,
+  if (client) {                             
+    Serial.println("httpProcessRequests() new client");           
+    // Solange der Client verbunden ist,
+    while (client.connected()) {            
+      // und wenn Daten vom Client vorliegen
+      if (client.available()) {             
+        // Lies ein Byte
+        c = client.read();
+        // und gibt es seriell aus                  
+        Serial.write(c);                    
+        // wenn das Byte ein "Newline" ist,
+        if (c == '\n') {                    
+          // Wenn die aktuelle Zeile leer ist, haben wir zwei Newlines hintereinander und damit das Ende des Requests
+          if (currentLine.length() == 0) {
+            Serial.println("GET / => Status");
+            htmlGetStatus();
+            break;
+          }
+          else {      
+            // Für jede weitere Zeile leeren wir currentLine
+            currentLine = "";
+          }
+        }
+        // Falls wir irgendwas anderes als einen CR erhalten,
+        else if (c != '\r') {    
+          // Fügen wir das Zeichen currentLine hinzu
+          currentLine += c;  
+        }
+
+        // "Konfiguration anzeigen"
+        if (currentLine.endsWith("GET /config")) {
+          Serial.println("GET /config => Config");
+          htmlGetConfig();
+          break;
+        }
+
+        // "Konfiguration laden"
+        if (currentLine.endsWith("GET /load")) {
+          Serial.println("GET /load => Load Config");
+          htmlGetHeader(0);
+          client.print("<html><body>");
+          if (loadConfig()) {
+            client.print("Konfig erfolgreich geladen<br/><br/>");
+          } else {
+            client.print("Konfig konnte nicht geladen werden<br/><br/>");
+          }          
+          client.print("<a href=\"/\">Zur&uuml;ck</a>");
+          client.print("</body></html>");
+          break;
+        }
+
+        // "Konfiguration speichern"
+        if (currentLine.indexOf("POST") != -1) {
+          htmlSetConfig();
+          htmlGetConfig();
+          break;
+        }
+
+        // "Neustarten"
+        if (currentLine.endsWith("GET /reboot")) {
+          //reboot(); TODO: Klappt noch nicht
+        }
+
+      } else {
+        // Serial.println("Nothing to read from client");
+      }
+    }
+
+    // Verbindung schließen
+    client.stop();
+    Serial.println("Client getrennt");
+  } else {
+    // Kein neuer Client
+  }
+
+}
+
+void printSensors() {
   Serial.println("Anzahl Sensoren im Array: " + String(numberOfSensors));
   for (int i = 0; i < numberOfSensors; i++) {
     Serial.print("Sensor " + String(i) + " Adresse: ");
@@ -135,9 +548,9 @@ void outputSensors() {
 }
 
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value) {
-  Serial.println("addSensor(): begin");
-
   SensorData* tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
+
+  Serial.println("addSensor(): begin");
 
   // Übertrage vorhandene Daten in das temporäre Array
   for (int i = 0; i < numberOfSensors; i++) {
@@ -145,7 +558,6 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   }
 
   // Füge das neue Sensorobjekt hinzu
-  //tempArray[numberOfSensors] = {*address, *name, *type, value};
   strcpy(tempArray[numberOfSensors].address, address);
   strcpy(tempArray[numberOfSensors].name, name);
   tempArray[numberOfSensors].type = type;
@@ -173,11 +585,31 @@ boolean updateSensorValue(const SensorAddress address, const float value) {
    return false;
 }
 
+boolean getSensorType(const SensorAddress address, SensorType& type) {
+   for (int i = 0; i < numberOfSensors; i++) {
+     if (strcmp(sensorList[i].address, address) == 0) {
+       type = sensorList[i].type;
+       return true; 
+     }
+   }
+   return false;
+}
 
 void getSensorName(const SensorAddress address, SensorName name) {
-  // TODO: Dummy Funktion
-  strcpy(name, address);
-  strcat(name, ".");
+  strcpy(name, "");
+  // Tacker durch das sensorConfig Array in config durch
+  for (int i = 0; i < sensorConfigCount; i++) {
+    // Vergleich die Adresse aus dem Parameter mit der in der Config
+    if (strcmp(address, config.sensorConfig[i].address) == 0) {
+      // Und gib bei Übereinstimmung den Namen zurück
+      strcpy(name, config.sensorConfig[i].name);
+      Serial.print("getSensorName(): Sensor gefunden: Adresse=");
+      Serial.print(address);
+      Serial.print(" name=");
+      Serial.println(name);
+      break;
+    }
+  }
 }
 
 void removeSensor(SensorAddress address) {
@@ -210,28 +642,31 @@ void removeSensor(SensorAddress address) {
   }
 }
 
-
 void setupDisplay() {
-  Serial.println("setup() Initialisiere Display");
-
+  Serial.println("setupDisplay() begin");
   tft.begin();
   tft.setBitrate(24000000);
   tft.clearScreen();
   tft.defineScrollArea(128, 128);
   tft.setCursor(xBegin, yBegin);
   tft.println("Start");
+  Serial.println("setupDisplay() end");
 }
 
 boolean wifiFine() {
-  return WiFi.status() == WL_CONNECTED;
+  switch(config.wifiMode) {
+    case 'c': 
+      return WiFi.status() == WL_CONNECTED; // Positiver Zustand als Client
+    case 'a': 
+      return (WiFi.status() == WL_AP_CONNECTED || WiFi.status() == WL_AP_LISTENING); // Positive Zustände als AP
+    default: 
+      return false;
+  }
 }
 
 boolean sensorsFine() {
  return sensors.getDeviceCount() > 0;
 }
-
-
-
 
 void blink() {
   if (wifiFine() && sensorsFine()) {
@@ -247,11 +682,42 @@ void blink() {
   }
 }
 
+void getLevels() {
+String address;
+SensorAddress addressC;
+
+  // Brich ab, wenn unser Inverall noch nicht erreicht ist
+  if (millis() < levelCheckLast + (levelCheckInterval * 1000)) {
+    return;
+  }
+  Serial.println("getLevels() begin");
+  levelCheckLast = millis();
+
+  ds2438.update();
+  if (ds2438.isError()) {
+      Serial.println("Error reading from DS2438 device");
+  } else {
+      Serial.print("Temperature = ");
+      Serial.print(ds2438.getTemperature(), 1);
+      Serial.print("C, Channel A = ");
+      Serial.print(ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
+      Serial.print("v, Channel B = ");
+      Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
+      Serial.println("v.");
+      address = deviceAddrToStr(DS2438_address);
+      strcpy (addressC, address.c_str());
+      updateSensorValue(addressC, ds2438.getVoltage(DS2438_CHA));
+  }
+
+  Serial.println("getLevels() end");
+}
+
 void getTemperatures() {
 float value;
 String address;
 SensorAddress addressC;
 DeviceAddress addr;
+SensorType type;
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < tempCheckLast + (tempCheckInterval * 1000)) {
@@ -274,21 +740,26 @@ DeviceAddress addr;
     // Ermittle die Temperatur
     value = sensors.getTempCByIndex(i);
 
-    // Aktualisiere die Liste
-    updateSensorValue(addressC, value);
-    
+    // Prüfe, ob der Typ (="t") passt
+    if (getSensorType(addressC, type)) {
+      if (type == 't') {
+        // Aktualisiere die Liste
+        updateSensorValue(addressC, value);
+      }
+    }
   }  
 
   Serial.println("getTemperatures() end");
 }
 
 void setup1Wire() {
-float value;
-String address;
-SensorAddress addressC;
-SensorName nameC;
-SensorType typeC;
-DeviceAddress addr;
+  byte addrArray[8];
+  float value;
+  String address;
+  SensorAddress addressC;
+  SensorName nameC;
+  SensorType typeC;
+  DeviceAddress addr;
 
     // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
   if (oneWire.search(addrArray)) {
@@ -297,9 +768,11 @@ DeviceAddress addr;
     Serial.println("Keine Geräte gefunden");
   }
 
-
-  // Suche nach angeschlossenen Sensoren
+  // Starte Objekt für Temperatur-Sensoren
   sensors.begin();
+
+  // Starte Objekt für DS2438
+  ds2438.begin();
 
   // Leere die Liste
   clearSensorList();
@@ -333,7 +806,7 @@ DeviceAddress addr;
 
     // Ermittle den Typ
     Serial.println("Ermittle Typ Sensor " + String(i));
-    if (getSensorType(addressC, typeC) == true) {
+    if (getSensorTypeByAddress(addressC, typeC) == true) {
       Serial.println("Typ erfolgreich ermittelt");
     } else {
       Serial.println("Typ nicht erfolgreich ermittelt");
@@ -343,17 +816,19 @@ DeviceAddress addr;
 
     addSensor(addressC, nameC, typeC, value);
   }  
-  outputSensors();
 }
 
-String getTemperatureAsHtml() {
-  Serial.println("getTemperatureAsHtml() begin");
+String getValuesAsHtml() {
+// TODO: Informationen aus der sensorList beziehen
   String address;
   String temp;
   DeviceAddress addr;
   String returnString = "";
+  float tempC;
+
+  Serial.println("getValuesAsHtml() begin");
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
-    float tempC = sensors.getTempCByIndex(i);
+    tempC = sensors.getTempCByIndex(i);
     sensors.getAddress(addr, i);
     address = deviceAddrToStr(addr);
     temp = String(tempC);
@@ -361,21 +836,25 @@ String getTemperatureAsHtml() {
     Serial.println("Ermittle Inhalt für Webserver: " + returnString);
   }
   return returnString;
-  Serial.println("getTemperatureAsHtml() end");
+  Serial.println("getValuesAsHtml() end");
 }
 
 void setup() {
   // Starte die serielle Kommunikation
   Serial.begin(9600);
-  delay(1000);
+  delay(500);
   Serial.println("setup() begin");
   pinMode(LED_BUILTIN, OUTPUT);
 
+  // Konfig
+  setupMemory();
+  loadConfig(); // Achtung! Schlägt direkt nach dem Upload fehl
 
   // Display
   setupDisplay();
 
-  // Verbinde mit dem WLAN
+  // Stelle Verbindung mit dem WLAN her
+  setupWifi();
   checkWiFi();
 
   // Verbinde mit dem MQTT-Server
@@ -384,76 +863,124 @@ void setup() {
   // Öffne den 1-Wire Bus
   setup1Wire();
 
-  outputSensors();
+  printSensors();
 
-  // Debug
-  strcpy(sensorList[0].name, "Temp");
-  strcpy(sensorList[1].name, "Fuellstand");
+  tft.clearScreen();
 }
 
 void printWiFiStatus() {
   Serial.println("printWiFiStatus() begin");
-  // print the SSID of the network you're attached to:
+
   Serial.print("SSID: ");
   Serial.println(WiFi.SSID());
 
-  // print your WiFi shield's IP address:
+  if (config.wifiMode == 'a') {
+    Serial.print("Password: ");
+    Serial.println(config.wifiPass);
+  };
+
   ip = WiFi.localIP();
   Serial.print("IP Address: ");
   Serial.println(ip);
 
-  // print where to go in a browser:
-  Serial.print("To see this page in action, open a browser to http://");
-  Serial.println(ip);
+  Serial.print("Server Status: ");
+  Serial.println(server.status());
   Serial.println("printWiFiStatus() end");
 }
 
 boolean checkWiFi() {
-  // Prüfe, ob WiFi überhaupt aktivier tist
-  if (!wifiActive) {
+  // Prüfe, ob WiFi überhaupt aktiviert tist
+  if (!config.wifiActive) {
     return true;
   }
   // Ermittle den Zeitpunkt, bis zu dem der Verbindungsversuch dauern darf
-  unsigned int deadline = millis() + (wifiTimeout * 1000);
+  unsigned int deadline = millis() + (config.wifiTimeout * 1000);
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < wifiCheckLast + (wifiCheckInterval * 1000)) {
     return false;
   }
   wifiCheckLast = millis();
- 
+
+  Serial.println("checkWiFi() Prüfe, ob WLAN Verbindung besteht");
+
   // Wenn WLAN nicht verbunden ist,
   if (!wifiFine()) {
-    // versuch, die Verbindung aufzubauen
-    Serial.println("Verbinde mit WLAN...");
-    while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
-      delay(1000);
-      Serial.println("Verbindung wird hergestellt...");
-      if (millis() > deadline) {
-        break;
+    Serial.println("checkWiFi() WLAN Verbindung besteht nicht");
+    if (config.wifiMode == 'c') {
+      // versuch, die Verbindung aufzubauen
+      Serial.println("Verbinde mit WLAN...");
+      while (WiFi.begin(config.wifiSsid, config.wifiPass) != WL_CONNECTED) {
+        delay(1000);
+        Serial.println("Verbindung wird hergestellt...");
+        if (millis() > deadline) {
+          break;
+        }
+      }
+    } else {
+      // Versuch, den AP zu starten
+      Serial.println("Starte WLAN AccessPoint...");
+      while (WiFi.beginAP(config.wifiSsid, config.wifiPass) != WL_AP_LISTENING) {
+        delay(1000);
+        Serial.println("AccessPoint wird gestartet...");
+        if (millis() > deadline) {
+          break;
+        }
       }
     }
   } else {
     // Wenn die Verbindung besteht, steig aus
+    Serial.println("checkWiFi() WLAN Verbindung besteht");
     return true;
   } 
 
+  Serial.println("checkWiFi() Prüfe erneut, ob WLAN Verbindung besteht");
   // Prüfe, ob nun eine Verbindung besteht
   if (wifiFine()) {
     Serial.println("Verbunden mit WLAN");
     // Starte den Webserver
+    Serial.println("Starte Server");
     server.begin();
     printWiFiStatus();
     return true;
   } else  {
-    Serial.println("Verbindung mit WLAN fehlgeschlagen!");
+    Serial.println("WLAN nicht verbunden!");
     return false;
   } 
+  Serial.println("checkWiFi() end");
+}
+
+void setupMemory() {
+  Serial.println("setupMemory() begin");
+  Serial.print("Board: ");
+  Serial.println(BOARD_NAME);
+  Serial.print("Flash und SAMD Version: ");
+  Serial.println(FLASH_STORAGE_SAMD_VERSION);
+  Serial.print("EEPROM Länge: ");
+  Serial.println(EEPROM.length());
+  Serial.println("setupMemory() end");
+}
+
+void setupWifi() {
+  if (!config.wifiActive) {
+    return;
+  }
+  Serial.println("setupWifi() begin");
+  // check for the WiFi module:
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println("Konnte das WiFi-Modul nicht ansprechen!");
+  }
+
+  String fv = WiFi.firmwareVersion();
+  if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
+    Serial.println("***** Bitte WIFI Firmware aktualisieren! *****");
+  }
+  Serial.println("setupWifi() end");
 }
 
 boolean connectToMQTT() {
   // Prüfe, ob MQTT überhaupt aktivier tist
-  if (!mqttActive) {
+  if (!config.mqttActive) {
     return true;
   }
 
@@ -462,19 +989,21 @@ boolean connectToMQTT() {
     return false;
   }
   Serial.println("connectToMQTT(): Verbinde mit MQTT-Server...");
-  mqttClient.setServer(mqttServer, mqttPort);
+  mqttClient.setServer(config.mqttServer, config.mqttPort);
   while (!mqttClient.connected()) {
-    if (mqttClient.connect(mqttName, mqttUser, mqttPassword)) {
+    if (mqttClient.connect(config.mqttName, config.mqttUser, config.mqttPassword)) {
       Serial.println("connectToMQTT(): Verbunden mit MQTT-Server");
       return true;
     } else {
       Serial.print("connectToMQTT(): Verbindung mit MQTT-Server fehlgeschlagen, rc=");
       Serial.println(mqttClient.state());
+      return false;
     }
   }
+  return false;
 }
 
-void displayTemperatures() {
+void displayValues() {
   SensorName name;
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
@@ -483,14 +1012,13 @@ void displayTemperatures() {
   }
   displayLast = millis();
 
-  tft.clearScreen();
+  tft.fillRect(xBegin, yBegin, 128, 20, 0x0000);
   tft.setCursor(xBegin, yBegin);
 
   // Fehlermeldung, wenn keine Sensoren gefunden wurden
   if (numberOfSensors <= 0) {
     Serial.println("displayTemperatures(): Keine Sensoren gefunden, deren Daten angezeigt werden könnten"); 
   }
-  outputSensors();
 
   // Iteriere durch alle Sensoren
   for (int i = 0; i < numberOfSensors; i++) {
@@ -503,10 +1031,13 @@ void displayTemperatures() {
       strcpy(name, sensorList[i].address);
     }
     tft.println(String(name) + ": " + sensorList[i].value);
+
+    /*
     Serial.print("> ");
     Serial.print(name);
     Serial.print(": ");
     Serial.println(sensorList[i].value);
+    */
   }
 }
 
@@ -517,7 +1048,7 @@ void sendTemperaturesToMQTT() {
   char payload[10];
 
   // Prüfe, ob WiFi überhaupt aktivier tist
-  if (!mqttActive) {
+  if (!config.mqttActive) {
     return;
   }
 
@@ -590,92 +1121,19 @@ void printSensorAddresses() {
   }
 }
 
+
 void loop() {
   blink();
 
   checkWiFi();
 
   getTemperatures();
+  getLevels();
 
-  displayTemperatures(); 
+  displayValues(); 
 
   sendTemperaturesToMQTT();
 
-  // Verarbeite HTTP-Anfragen
-  WiFiClient client = server.available();
-  if (client) {                             // if you get a client,
-    Serial.println("new client");           // print a message out the serial port
-    String currentLine = "";                // make a String to hold incoming data from the client
-    while (client.connected()) {            // loop while the client's connected
-      if (client.available()) {             // if there's bytes to read from the client,
-        char c = client.read();             // read a byte, then
-        Serial.write(c);                    // print it out the serial monitor
-        if (c == '\n') {                    // if the byte is a newline character
-
-          // if the current line is blank, you got two newline characters in a row.
-          // that's the end of the client HTTP request, so send a response:
-          if (currentLine.length() == 0) {
-
-            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-            // and a content-type so the client knows what's coming, then a blank line:
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-type:text/html");
-            client.println();
-
-            // the content of the HTTP response follows the header:
-            client.print("<html>");
-            client.print("<head>");
-            client.print("<meta http-equiv=\"refresh\" content=\"1; url=http://");
-            client.print(ip);
-            client.print("/\"/>");
-            client.print("</head>");
-            client.print("<p style=\"font-size:80px; font-family: monospace\">"); 
-            client.print("Sensoren: </br>");
-            client.print(getTemperatureAsHtml());
-            //client.print("s <b><a href=\"/m\">+</a>&nbsp;&nbsp;<a href=\"/l\">-</a></b>");
-            client.print("<br/>");
-            //client.print("<a href=\"/1\">Start</a><br/>");
-            //client.print("<a href=\"/0\">Stop</a><br/>");
-            client.print("</p>");
-            client.print("</html>");
-
-            // The HTTP response ends with another blank line:
-            client.println();
-
-            // break out of the while loop:
-            break;
-
-          }
-          else {      // if you got a newline, then clear currentLine:
-            currentLine = "";
-          }
-        }
-
-        else if (c != '\r') {    // if you got anything else but a carriage return character,
-          currentLine += c;      // add it to the end of the currentLine
-        }
-
-        // "On"
-        if (currentLine.endsWith("GET /1")) {
-        }
-
-        // "Off"
-        if (currentLine.endsWith("GET /0")) {
-        }
-
-        // Zeit erhöhen, hiernach wird die Seite mit dem neuen Wert ausgeliefert
-        if (currentLine.endsWith("GET /m")) {
-        }
-
-        // Zeit verringern, hiernach wird die Seite mit dem neuen Wert ausgeliefert
-        if (currentLine.endsWith("GET /l")) {
-        }
-      }
-    }
-
-    // close the connection:
-    client.stop();
-    Serial.println("client disconnected");
-  }
+  httpProcessRequests();
 
 }

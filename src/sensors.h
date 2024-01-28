@@ -1,46 +1,51 @@
 #include <Arduino.h>
 #include <DallasTemperature.h>
 
-typedef char SensorAddress[17];
+typedef char SensorAddress    [17];
 typedef char SensorType;
-typedef char SensorName[21];
+typedef char SensorName       [21];
+typedef char SensorValueFormat[11];
 struct SensorData {
-  SensorAddress address;
-  SensorType type;
-  SensorName name;
+  SensorAddress     address = "";
+  SensorType        type    = '.';
+  SensorName        name    = "";
+  SensorValueFormat format  = "";
   float value;
 };
 
+struct SensorConfig {
+  SensorAddress     address = "";
+  SensorName        name    ="";
+  SensorValueFormat format  = "";
+};
+
+const int sensorConfigCount = 10;
+
+// *************** Deklaration der Funktionen
 byte convertHexCStringToByte(const char* hexString);
 String deviceAddrToStr(DeviceAddress addr);
 void deviceAddrToStrNew(const DeviceAddress addr, String out);
 const char* deviceAddrToChar(DeviceAddress addr); 
-bool getSensorType(const SensorAddress manufacturerCode, char& sensorType);
+bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType);
 
-
+// ***************  Funktionen
 byte convertHexCStringToByte(const char* hexString) {
   // Erstelle einen temporären C-String mit den ersten beiden Zeichen des Eingabe-C-Strings
   char tempString[3];
   strncpy(tempString, hexString, 2);
-  Serial.print("tempString=");
-  Serial.println(tempString);
   // Stelle sicher, dass der temporäre C-String mit einem Null-Byte abgeschlossen ist
   tempString[2] = '\0';
 
   // Verwende strtol, um den hexadezimalen C-String in eine Ganzzahl (long) zu konvertieren
   long value = strtol(tempString, nullptr, 16);
-  Serial.print("value=");
-  Serial.println(value);
   
   // Konvertiere die Ganzzahl auf einen byte-Wert (0-255)
   byte result = static_cast<byte>(value);
-  Serial.print("result=");
-  Serial.println(result);
 
   return result;
 }
 
-bool getSensorType(const SensorAddress manufacturerCode, char& sensorType) {
+bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType) {
   char code[17];
   byte firstByte;
   // Überprüfe nur das erste Byte des char-Arrays
