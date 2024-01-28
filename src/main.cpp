@@ -56,7 +56,6 @@ int     yBegin     = 10;
 
 // 1-Wire
 const int PinOneWireBus = 10; // Pin, an dem der 1-Wire-Bus angeschlossen ist // = D10
-uint8_t DS2438_address[] = { 0x26, 0x2c, 0xc4, 0x2c, 0x00, 0x00, 0x00, 0xf5 }; // Adresse des DS2438 
 
 // Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
 const int wifiCheckInterval = 10;
@@ -85,7 +84,6 @@ SensorData* sensorList = nullptr;         // Zeiger auf das Array von SensorData
 int numberOfSensors = 0;                  // Aktuelle Anzahl von Sensoren
 OneWire oneWire(PinOneWireBus);           // 1-Wire Grundobjekt
 DallasTemperature sensors(&oneWire);      // 1-Wire Objekt für Temperatursensoren
-DS2438 ds2438(&oneWire, DS2438_address);  // 1-Wire Objekt für DS2438-Sensoren
 
 // Webserver
 IPAddress   ip; 
@@ -512,7 +510,7 @@ char c;
           htmlSetConfig();
           htmlGetConfig();
           break;
-        }
+        }                      
 
         // "Neustarten"
         if (currentLine.endsWith("GET /reboot")) {
@@ -548,7 +546,9 @@ void printSensors() {
 }
 
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value) {
-  SensorData* tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
+  SensorData*   tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
+  DeviceAddress tempDs2438DeviceAddress;
+  String        tempDs2438AddressString;
 
   Serial.println("addSensor(): begin");
 
@@ -562,6 +562,32 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   strcpy(tempArray[numberOfSensors].name, name);
   tempArray[numberOfSensors].type = type;
   tempArray[numberOfSensors].value = value;
+
+  // Wenn es sich um einen Typ b (= DS3428) handelt, erzeuge das entspr. Objekt
+  if (type == 'b') {
+    Serial.print("Typ ist b, konvertiere C-String Adresse ");
+    Serial.print(address);
+    Serial.println(" zu String");
+    // Adresse als C-String zu Adresse als String
+    tempDs2438AddressString = String(address);
+    Serial.println("Konvertiere String-Adresse " + tempDs2438AddressString + " zu DeviceAddress");
+    // Adresse als String zu Adresse als DeviceAddress
+    strToDeviceAddr(tempDs2438AddressString, tempDs2438DeviceAddress);
+    Serial.print("Adresse zu DeviceAddress konvertiert: ");
+    for (uint8_t j = 0; j < 8; j++) {
+      if (tempDs2438DeviceAddress[j] < 16) Serial.print("0");
+      Serial.print(tempDs2438DeviceAddress[j], HEX);
+    }
+    Serial.println(" ");
+    // Objekt mit OneWire Objekt und DeviceAddress erzeugen
+    uint8_t foo[] = { 0x26, 0x2c, 0xc4, 0x2c, 0x00, 0x00, 0x00, 0xf5 };
+    //DS2438 tempDs2438(&oneWire, tempDs2438DeviceAddress);
+    //DS2438 tempDs2438(&oneWire, foo);
+    // Starte Objekt für DS2438
+    // Und der Variable im Array zuweisen
+    tempArray[numberOfSensors].ds2438 = DS2438(&oneWire, foo);
+    tempArray[numberOfSensors].ds2438.begin();
+  }
 
   // Erhöhe die Anzahl der Sensoren
   numberOfSensors++;
@@ -684,7 +710,6 @@ void blink() {
 
 void getLevels() {
 String address;
-SensorAddress addressC;
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < levelCheckLast + (levelCheckInterval * 1000)) {
@@ -693,21 +718,27 @@ SensorAddress addressC;
   Serial.println("getLevels() begin");
   levelCheckLast = millis();
 
-  ds2438.update();
-  if (ds2438.isError()) {
-      Serial.println("Error reading from DS2438 device");
-  } else {
-      Serial.print("Temperature = ");
-      Serial.print(ds2438.getTemperature(), 1);
-      Serial.print("C, Channel A = ");
-      Serial.print(ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
-      Serial.print("v, Channel B = ");
-      Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
+  for (int i = 0; i < numberOfSensors; i++) {
+    if (sensorList[i].type == 'b') {
+      Serial.print("Sensor DS2438 ");
+      Serial.print(sensorList[i].address);
+      sensorList[i].ds2438.update();
+      if (sensorList[i].ds2438.isError()) {
+        Serial.print(" konnte nicht erfolgreich abgefragt werden");
+      } else {
+        Serial.print(" erfolgreich abgefragt");
+        updateSensorValue(sensorList[i].address, sensorList[i].ds2438.getVoltage(DS2438_CHA));
+      }
+      Serial.print(": Temperatur = ");
+      Serial.print(sensorList[i].ds2438.getTemperature(), 1);
+      Serial.print("C, Kanal A = ");
+      Serial.print(sensorList[i].ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
+      Serial.print("v, Kanal B = ");
+      Serial.print(sensorList[i].ds2438.getVoltage(DS2438_CHB), 1);
       Serial.println("v.");
-      address = deviceAddrToStr(DS2438_address);
-      strcpy (addressC, address.c_str());
-      updateSensorValue(addressC, ds2438.getVoltage(DS2438_CHA));
+    }
   }
+
 
   Serial.println("getLevels() end");
 }
@@ -770,9 +801,6 @@ void setup1Wire() {
 
   // Starte Objekt für Temperatur-Sensoren
   sensors.begin();
-
-  // Starte Objekt für DS2438
-  ds2438.begin();
 
   // Leere die Liste
   clearSensorList();
@@ -1103,7 +1131,7 @@ void printSensorAddresses() {
     sensors.getAddress(tempAddress, i);
 
     Serial.print("Sensor ");
-    Serial.print(i + 1);
+    Serial.print(i);
     Serial.print(" Adresse: ");
 
     tft.print("Sensor ");

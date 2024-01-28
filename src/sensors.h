@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <DallasTemperature.h>
+#include <DS2438.h>
 
 typedef char SensorAddress    [17];
 typedef char SensorType;
@@ -10,7 +11,8 @@ struct SensorData {
   SensorType        type    = '.';
   SensorName        name    = "";
   SensorValueFormat format  = "";
-  float value;
+  float             value;
+  DS2438            ds2438;   // 1-Wire Objekt für DS2438-Sensoren
 };
 
 struct SensorConfig {
@@ -26,6 +28,7 @@ byte convertHexCStringToByte(const char* hexString);
 String deviceAddrToStr(DeviceAddress addr);
 void deviceAddrToStrNew(const DeviceAddress addr, String out);
 const char* deviceAddrToChar(DeviceAddress addr); 
+bool strToDeviceAddr(const String &str, DeviceAddress &addr);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType);
 
 // ***************  Funktionen
@@ -44,6 +47,24 @@ byte convertHexCStringToByte(const char* hexString) {
 
   return result;
 }
+
+bool strToDeviceAddr(const String &str, DeviceAddress &addr) {
+  // Überprüfen, ob die Zeichenkette die richtige Länge hat
+  if (str.length() != 16) {
+    return false; // Fehler, wenn die Länge nicht korrekt ist
+  }
+
+  for (uint8_t j = 0; j < 8; j++) {
+    // Extrahiere zwei Zeichen von der Zeichenkette
+    String hexStr = str.substring(j * 2, j * 2 + 2);
+    
+    // Konvertiere die extrahierten Zeichen in einen Hexadezimalwert
+    addr[j] = strtol(hexStr.c_str(), nullptr, 16);
+  }
+
+  return true; // Konvertierung erfolgreich
+}
+
 
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType) {
   char code[17];
