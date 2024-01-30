@@ -16,7 +16,7 @@
 typedef struct {
   char    head           [5] = "MRAb";
   // WLAN
-  boolean wifiActive         = true;
+  boolean wifiActive         = false;  // MRA: Debug
   char    wifiMode           = 'a'; // a = Access Point / c = Client
   int     wifiTimeout        = 10;
   char    wifiSsid      [21] = "ArduinoAP";
@@ -558,6 +558,9 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   }
 
   // Füge das neue Sensorobjekt hinzu
+  Serial.print("  Füge Sensor ");
+  Serial.print(address);
+  Serial.println(" hinzu");
   strcpy(tempArray[numberOfSensors].address, address);
   strcpy(tempArray[numberOfSensors].name, name);
   tempArray[numberOfSensors].type = type;
@@ -565,29 +568,37 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
 
   // Wenn es sich um einen Typ b (= DS3428) handelt, erzeuge das entspr. Objekt
   if (type == 'b') {
-    Serial.print("Typ ist b, konvertiere C-String Adresse ");
+    Serial.print("  Typ ist b, konvertiere C-String Adresse ");
     Serial.print(address);
     Serial.println(" zu String");
     // Adresse als C-String zu Adresse als String
     tempDs2438AddressString = String(address);
-    Serial.println("Konvertiere String-Adresse " + tempDs2438AddressString + " zu DeviceAddress");
+    Serial.println("  Konvertiere String-Adresse " + tempDs2438AddressString + " zu DeviceAddress");
     // Adresse als String zu Adresse als DeviceAddress
     strToDeviceAddr(tempDs2438AddressString, tempDs2438DeviceAddress);
-    Serial.print("Adresse zu DeviceAddress konvertiert: ");
+    Serial.print("  Adresse zu DeviceAddress konvertiert: ");
     for (uint8_t j = 0; j < 8; j++) {
       if (tempDs2438DeviceAddress[j] < 16) Serial.print("0");
       Serial.print(tempDs2438DeviceAddress[j], HEX);
     }
     Serial.println(" ");
     // Objekt mit OneWire Objekt und DeviceAddress erzeugen
-    uint8_t foo[] = { 0x26, 0x2c, 0xc4, 0x2c, 0x00, 0x00, 0x00, 0xf5 };
     //DS2438 tempDs2438(&oneWire, tempDs2438DeviceAddress);
     //DS2438 tempDs2438(&oneWire, foo);
     // Starte Objekt für DS2438
     // Und der Variable im Array zuweisen
-    tempArray[numberOfSensors].ds2438 = DS2438(&oneWire, foo);
+    tempArray[numberOfSensors].ds2438 = DS2438(&oneWire, tempDs2438DeviceAddress);
+    Serial.print("  Adressse des DS2438 Objekts: ");
+    Serial.println((unsigned int)&tempArray[numberOfSensors].ds2438, HEX);
     tempArray[numberOfSensors].ds2438.begin();
-  }
+    tempArray[numberOfSensors].ds2438.update();
+    Serial.print("  IsError: ");
+    Serial.println(tempArray[numberOfSensors].ds2438.isError());
+    Serial.print(" Timestamp: ");
+    Serial.print(tempArray[numberOfSensors].ds2438.getTimestamp());
+    Serial.print("  Temperatur:  ");
+    Serial.println(tempArray[numberOfSensors].ds2438.getTemperature());    
+  };
 
   // Erhöhe die Anzahl der Sensoren
   numberOfSensors++;
@@ -720,22 +731,29 @@ String address;
 
   for (int i = 0; i < numberOfSensors; i++) {
     if (sensorList[i].type == 'b') {
-      Serial.print("Sensor DS2438 ");
+      Serial.print("  Sensor DS2438 ");
       Serial.print(sensorList[i].address);
+      Serial.print(" Adresse ");
+      Serial.print((unsigned int)&sensorList[i].ds2438, HEX);
       sensorList[i].ds2438.update();
       if (sensorList[i].ds2438.isError()) {
-        Serial.print(" konnte nicht erfolgreich abgefragt werden");
+        Serial.print(" erfolglos abgefragt"); 
       } else {
         Serial.print(" erfolgreich abgefragt");
         updateSensorValue(sensorList[i].address, sensorList[i].ds2438.getVoltage(DS2438_CHA));
       }
+      Serial.print(": Timestamp: ");
+      Serial.print(sensorList[i].ds2438.getTimestamp());
       Serial.print(": Temperatur = ");
       Serial.print(sensorList[i].ds2438.getTemperature(), 1);
       Serial.print("C, Kanal A = ");
       Serial.print(sensorList[i].ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
       Serial.print("v, Kanal B = ");
       Serial.print(sensorList[i].ds2438.getVoltage(DS2438_CHB), 1);
-      Serial.println("v.");
+      Serial.print("v.");
+      Serial.print(" IsError: ");
+      Serial.println(sensorList[i].ds2438.isError());
+
     }
   }
 
@@ -749,7 +767,6 @@ String address;
 SensorAddress addressC;
 DeviceAddress addr;
 SensorType type;
-
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < tempCheckLast + (tempCheckInterval * 1000)) {
     return;
@@ -758,7 +775,7 @@ SensorType type;
   tempCheckLast = millis();
 
   // Aktualisiere die Temperaturdaten
-  Serial.println("getTemperatures() Aktualisiere Temperaturen");
+  Serial.println("  Aktualisiere Temperaturen");
   sensors.requestTemperatures();
 
   // Iteriere durch alle Sensoren
@@ -792,11 +809,12 @@ void setup1Wire() {
   SensorType typeC;
   DeviceAddress addr;
 
+  Serial.println("setup1Wire() begin");
     // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
   if (oneWire.search(addrArray)) {
   } else {
     tft.println("Keine Geräte gefunden");
-    Serial.println("Keine Geräte gefunden");
+    Serial.println("  Keine Geräte gefunden");
   }
 
   // Starte Objekt für Temperatur-Sensoren
@@ -805,45 +823,51 @@ void setup1Wire() {
   // Leere die Liste
   clearSensorList();
 
-  Serial.println("Gefundene 1-Wire-Sensoren:");
+  Serial.println("  Gefundene 1-Wire-Sensoren:");
   tft.println("Gefundene 1-Wire-Sensoren:");
   printSensorAddresses();
 
   // Iteriere durch alle Sensoren
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
+
+    /*
     // Ermittle die Temperatur
-    Serial.println("Ermittle Temperatur Sensor " + String(i));
+    Serial.println("  Ermittle Temperatur Sensor " + String(i));
     value = sensors.getTempCByIndex(i);
-    Serial.print("Temperatur Sensor " + String(i) + ": ");
+    Serial.print("  Temperatur Sensor " + String(i) + ": ");
     Serial.println(value);
+    */
 
     // Ermittle die Adresse
-    Serial.println("Ermittle Adresse Sensor " + String(i));
+    Serial.println("  Ermittle Adresse Sensor " + String(i));
     sensors.getAddress(addr, i); 
     address = deviceAddrToStr(addr);
     strcpy (addressC, address.c_str());
-    Serial.println("address: " + address);
-    Serial.print("addressC: ");
+    Serial.println("  address: " + address);
+    Serial.print("  addressC: ");
     Serial.println(addressC);
 
     // Ermittle den Namen
-    Serial.println("Ermittle Name Sensor " + String(i));
+    Serial.println("  Ermittle Name Sensor " + String(i));
     getSensorName(addressC, nameC);
-    Serial.print("Name Sensor " + String(i) + ": ");
+    Serial.print("  Name Sensor " + String(i) + ": ");
     Serial.println(nameC);
 
     // Ermittle den Typ
-    Serial.println("Ermittle Typ Sensor " + String(i));
+    Serial.println("  Ermittle Typ Sensor " + String(i));
     if (getSensorTypeByAddress(addressC, typeC) == true) {
-      Serial.println("Typ erfolgreich ermittelt");
+      Serial.println("  Typ erfolgreich ermittelt");
     } else {
-      Serial.println("Typ nicht erfolgreich ermittelt");
+      Serial.println("  Typ nicht erfolgreich ermittelt");
     }
-    Serial.print("Typ Sensor " + String(i) + ": ");
+    Serial.print("  Typ Sensor " + String(i) + ": ");
     Serial.println(typeC);
 
-    addSensor(addressC, nameC, typeC, value);
+    addSensor(addressC, nameC, typeC, 0);
   }  
+  getTemperatures();
+  getLevels();
+  Serial.println("setup1Wire() end");
 }
 
 String getValuesAsHtml() {
@@ -861,7 +885,7 @@ String getValuesAsHtml() {
     address = deviceAddrToStr(addr);
     temp = String(tempC);
     returnString = returnString + address.substring(0, address.length()-2) + "-<b>" + address.substring(address.length()-2) + "</b>: " + temp + " &#8451;</br>";
-    Serial.println("Ermittle Inhalt für Webserver: " + returnString);
+    Serial.println("  Ermittle Inhalt für Webserver: " + returnString);
   }
   return returnString;
   Serial.println("getValuesAsHtml() end");
@@ -899,16 +923,16 @@ void setup() {
 void printWiFiStatus() {
   Serial.println("printWiFiStatus() begin");
 
-  Serial.print("SSID: ");
+  Serial.print("  SSID: ");
   Serial.println(WiFi.SSID());
 
   if (config.wifiMode == 'a') {
-    Serial.print("Password: ");
+    Serial.print("  Password: ");
     Serial.println(config.wifiPass);
   };
 
   ip = WiFi.localIP();
-  Serial.print("IP Address: ");
+  Serial.print("  IP Address: ");
   Serial.println(ip);
 
   Serial.print("Server Status: ");
@@ -937,20 +961,20 @@ boolean checkWiFi() {
     Serial.println("checkWiFi() WLAN Verbindung besteht nicht");
     if (config.wifiMode == 'c') {
       // versuch, die Verbindung aufzubauen
-      Serial.println("Verbinde mit WLAN...");
+      Serial.println("  Verbinde mit WLAN...");
       while (WiFi.begin(config.wifiSsid, config.wifiPass) != WL_CONNECTED) {
         delay(1000);
-        Serial.println("Verbindung wird hergestellt...");
+        Serial.println("  Verbindung wird hergestellt...");
         if (millis() > deadline) {
           break;
         }
       }
     } else {
       // Versuch, den AP zu starten
-      Serial.println("Starte WLAN AccessPoint...");
+      Serial.println("  Starte WLAN AccessPoint...");
       while (WiFi.beginAP(config.wifiSsid, config.wifiPass) != WL_AP_LISTENING) {
         delay(1000);
-        Serial.println("AccessPoint wird gestartet...");
+        Serial.println("  AccessPoint wird gestartet...");
         if (millis() > deadline) {
           break;
         }
@@ -965,14 +989,14 @@ boolean checkWiFi() {
   Serial.println("checkWiFi() Prüfe erneut, ob WLAN Verbindung besteht");
   // Prüfe, ob nun eine Verbindung besteht
   if (wifiFine()) {
-    Serial.println("Verbunden mit WLAN");
+    Serial.println("  Verbunden mit WLAN");
     // Starte den Webserver
-    Serial.println("Starte Server");
+    Serial.println("  Starte Server");
     server.begin();
     printWiFiStatus();
     return true;
   } else  {
-    Serial.println("WLAN nicht verbunden!");
+    Serial.println("  WLAN nicht verbunden!");
     return false;
   } 
   Serial.println("checkWiFi() end");
@@ -980,11 +1004,11 @@ boolean checkWiFi() {
 
 void setupMemory() {
   Serial.println("setupMemory() begin");
-  Serial.print("Board: ");
+  Serial.print("  Board: ");
   Serial.println(BOARD_NAME);
-  Serial.print("Flash und SAMD Version: ");
+  Serial.print("  Flash und SAMD Version: ");
   Serial.println(FLASH_STORAGE_SAMD_VERSION);
-  Serial.print("EEPROM Länge: ");
+  Serial.print("  EEPROM Länge: ");
   Serial.println(EEPROM.length());
   Serial.println("setupMemory() end");
 }
@@ -996,7 +1020,7 @@ void setupWifi() {
   Serial.println("setupWifi() begin");
   // check for the WiFi module:
   if (WiFi.status() == WL_NO_MODULE) {
-    Serial.println("Konnte das WiFi-Modul nicht ansprechen!");
+    Serial.println("  Konnte das WiFi-Modul nicht ansprechen!");
   }
 
   String fv = WiFi.firmwareVersion();
@@ -1105,7 +1129,7 @@ void sendTemperaturesToMQTT() {
   // Iteriere durch alle Sensoren
   for (int i = 0; i < numberOfSensors; i++) {
     // Ermittle die Temperatur
-    Serial.println("Ermittle temperatur sensor " + String(i));
+    Serial.println("  Ermittle temperatur sensor " + String(i));
     // Und bilde die MQTT-Nachricht
     strcpy(topic, "sensor/");
     strcat(topic, sensorList[i].address);
@@ -1123,14 +1147,14 @@ void sendTemperaturesToMQTT() {
 void printSensorAddresses() {
   DeviceAddress tempAddress;
 
-  Serial.print("Anzahl: ");
+  Serial.print("  Anzahl: ");
   Serial.println(sensors.getDeviceCount());
   tft.print("Anzahl: ");
   tft.println(sensors.getDeviceCount());
   for (int i = 0; i < sensors.getDeviceCount(); i++) {   
     sensors.getAddress(tempAddress, i);
 
-    Serial.print("Sensor ");
+    Serial.print("  Sensor ");
     Serial.print(i);
     Serial.print(" Adresse: ");
 
