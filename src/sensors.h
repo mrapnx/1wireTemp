@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <DallasTemperature.h>
-#include <DS2438.h>
 
 typedef char SensorAddress    [17];
 typedef char SensorType;
@@ -8,11 +7,11 @@ typedef char SensorName       [21];
 typedef char SensorValueFormat[11];
 struct SensorData {
   SensorAddress     address = "";
+  DeviceAddress     deviceAddress;
   SensorType        type    = '.';
   SensorName        name    = "";
   SensorValueFormat format  = "";
   float             value;
-  DS2438            ds2438;   // 1-Wire Objekt für DS2438-Sensoren
 };
 
 struct SensorConfig {
@@ -25,11 +24,12 @@ const int sensorConfigCount = 10;
 
 // *************** Deklaration der Funktionen
 byte convertHexCStringToByte(const char* hexString);
-String deviceAddrToStr(DeviceAddress addr);
-void deviceAddrToStrNew(const DeviceAddress addr, String out);
-const char* deviceAddrToChar(DeviceAddress addr); 
-bool strToDeviceAddr(const String &str, DeviceAddress &addr);
+String deviceAddressToStr(DeviceAddress addr);
+void deviceAddressToStrNew(const DeviceAddress addr, String out);
+const char* deviceAddressToChar(DeviceAddress addr); 
+bool strToDeviceAddress(const String &str, DeviceAddress &addr);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType);
+void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
 
 // ***************  Funktionen
 byte convertHexCStringToByte(const char* hexString) {
@@ -48,7 +48,13 @@ byte convertHexCStringToByte(const char* hexString) {
   return result;
 }
 
-bool strToDeviceAddr(const String &str, DeviceAddress &addr) {
+void copyDeviceAddress(const DeviceAddress in, DeviceAddress out) {
+  for (int i = 0; i < 8; i++) {
+    out[i] = in[i];
+  }
+}
+
+bool strToDeviceAddress(const String &str, DeviceAddress &addr) {
   // Überprüfen, ob die Zeichenkette die richtige Länge hat
   if (str.length() != 16) {
     return false; // Fehler, wenn die Länge nicht korrekt ist
@@ -93,7 +99,7 @@ bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorTy
 }
 
 
-String deviceAddrToStr(DeviceAddress addr) {
+String deviceAddressToStr(DeviceAddress addr) {
   String returnString = "";
     for (uint8_t j = 0; j < 8; j++) {
       // if (addr[j] < 16) returnString = "0";  // War im ursprünglichen Vorschlag einer Konvertierung, scheint aber keinen Sinn zu machen, da HEX 00 legitim ist.
@@ -107,7 +113,7 @@ String deviceAddrToStr(DeviceAddress addr) {
   return returnString;
 }
 
-void deviceAddrToStrNew(const DeviceAddress addr, String out) {
+void deviceAddressToStrNew(const DeviceAddress addr, String out) {
   out = "";
     for (uint8_t j = 0; j < 8; j++) {
       if (addr[j] < 16) out = "0";
@@ -118,7 +124,7 @@ void deviceAddrToStrNew(const DeviceAddress addr, String out) {
   Serial.println("deviceAddrToStrNew() ende, out = " + out);
 }
 
-const char* deviceAddrToChar(DeviceAddress addr) {
+const char* deviceAddressToChar(DeviceAddress addr) {
   static SensorAddress result;
   String returnString = "";
     for (uint8_t j = 0; j < 8; j++) {

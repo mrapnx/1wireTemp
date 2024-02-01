@@ -60,9 +60,9 @@ const int PinOneWireBus = 10; // Pin, an dem der 1-Wire-Bus angeschlossen ist //
 // Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
 const int wifiCheckInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen abgefragt werden
-const int tempCheckInterval = 15;
+const int tempCheckInterval = 5;
 // Frequenz in Sekunden, in der die Füllstände abgefragt werden
-const int levelCheckInterval = 15;
+const int levelCheckInterval = 2;
 // Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
 const int sendInterval = 10;
 // Frequenz in Sekunden, in der die Temperaturen angezeigt werden
@@ -121,8 +121,8 @@ void getSensorName(const SensorAddress address, SensorName);
 boolean getSensorType(const SensorAddress address, SensorType& type);
 
 // Ein- & Ausgabe-Methoden
-void getTemperatures();
-void getLevels();
+void updateTemperatures();
+void updateLevels();
 void printSensors();
 void printSensorAddresses();
 void printWiFiStatus();
@@ -548,7 +548,6 @@ void printSensors() {
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value) {
   SensorData*   tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
   DeviceAddress tempDs2438DeviceAddress;
-  String        tempDs2438AddressString;
 
   Serial.println("addSensor(): begin");
 
@@ -565,40 +564,8 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   strcpy(tempArray[numberOfSensors].name, name);
   tempArray[numberOfSensors].type = type;
   tempArray[numberOfSensors].value = value;
-
-  // Wenn es sich um einen Typ b (= DS3428) handelt, erzeuge das entspr. Objekt
-  if (type == 'b') {
-    Serial.print("  Typ ist b, konvertiere C-String Adresse ");
-    Serial.print(address);
-    Serial.println(" zu String");
-    // Adresse als C-String zu Adresse als String
-    tempDs2438AddressString = String(address);
-    Serial.println("  Konvertiere String-Adresse " + tempDs2438AddressString + " zu DeviceAddress");
-    // Adresse als String zu Adresse als DeviceAddress
-    strToDeviceAddr(tempDs2438AddressString, tempDs2438DeviceAddress);
-    Serial.print("  Adresse zu DeviceAddress konvertiert: ");
-    for (uint8_t j = 0; j < 8; j++) {
-      if (tempDs2438DeviceAddress[j] < 16) Serial.print("0");
-      Serial.print(tempDs2438DeviceAddress[j], HEX);
-    }
-    Serial.println(" ");
-    // Objekt mit OneWire Objekt und DeviceAddress erzeugen
-    //DS2438 tempDs2438(&oneWire, tempDs2438DeviceAddress);
-    //DS2438 tempDs2438(&oneWire, foo);
-    // Starte Objekt für DS2438
-    // Und der Variable im Array zuweisen
-    tempArray[numberOfSensors].ds2438 = DS2438(&oneWire, tempDs2438DeviceAddress);
-    Serial.print("  Adressse des DS2438 Objekts: ");
-    Serial.println((unsigned int)&tempArray[numberOfSensors].ds2438, HEX);
-    tempArray[numberOfSensors].ds2438.begin();
-    tempArray[numberOfSensors].ds2438.update();
-    Serial.print("  IsError: ");
-    Serial.println(tempArray[numberOfSensors].ds2438.isError());
-    Serial.print(" Timestamp: ");
-    Serial.print(tempArray[numberOfSensors].ds2438.getTimestamp());
-    Serial.print("  Temperatur:  ");
-    Serial.println(tempArray[numberOfSensors].ds2438.getTemperature());    
-  };
+  strToDeviceAddress(String(address), tempDs2438DeviceAddress);
+  copyDeviceAddress(tempDs2438DeviceAddress, tempArray[numberOfSensors].deviceAddress);
 
   // Erhöhe die Anzahl der Sensoren
   numberOfSensors++;
@@ -719,59 +686,50 @@ void blink() {
   }
 }
 
-void getLevels() {
-String address;
-
+void updateLevels() {
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < levelCheckLast + (levelCheckInterval * 1000)) {
     return;
   }
-  Serial.println("getLevels() begin");
+  Serial.println("updateLevels() begin");
   levelCheckLast = millis();
 
   for (int i = 0; i < numberOfSensors; i++) {
     if (sensorList[i].type == 'b') {
+      DS2438 ds2438(&oneWire, sensorList[i].deviceAddress);
+      ds2438.begin();
       Serial.print("  Sensor DS2438 ");
       Serial.print(sensorList[i].address);
       Serial.print(" Adresse ");
-      Serial.print((unsigned int)&sensorList[i].ds2438, HEX);
-      sensorList[i].ds2438.update();
-      if (sensorList[i].ds2438.isError()) {
+      Serial.print((unsigned int)&ds2438, HEX);
+      ds2438.update();
+      if (ds2438.isError()) {
         Serial.print(" erfolglos abgefragt"); 
       } else {
         Serial.print(" erfolgreich abgefragt");
-        updateSensorValue(sensorList[i].address, sensorList[i].ds2438.getVoltage(DS2438_CHA));
+        updateSensorValue(sensorList[i].address, ds2438.getVoltage(DS2438_CHA));
       }
       Serial.print(": Timestamp: ");
-      Serial.print(sensorList[i].ds2438.getTimestamp());
+      Serial.print(ds2438.getTimestamp());
       Serial.print(": Temperatur = ");
-      Serial.print(sensorList[i].ds2438.getTemperature(), 1);
+      Serial.print(ds2438.getTemperature(), 1);
       Serial.print("C, Kanal A = ");
-      Serial.print(sensorList[i].ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
+      Serial.print(ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
       Serial.print("v, Kanal B = ");
-      Serial.print(sensorList[i].ds2438.getVoltage(DS2438_CHB), 1);
-      Serial.print("v.");
-      Serial.print(" IsError: ");
-      Serial.println(sensorList[i].ds2438.isError());
-
+      Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
+      Serial.println("v.");
+      //delete &ds2438;  // MRA: Keine Ahnung warum, aber das führt zu nem Freeze
     }
   }
-
-
-  Serial.println("getLevels() end");
+  Serial.println("updateLevels() end");
 }
 
-void getTemperatures() {
-float value;
-String address;
-SensorAddress addressC;
-DeviceAddress addr;
-SensorType type;
+void updateTemperatures() {
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < tempCheckLast + (tempCheckInterval * 1000)) {
     return;
   }
-  Serial.println("getTemperatures() begin");
+  Serial.println("updateTemperatures() begin");
   tempCheckLast = millis();
 
   // Aktualisiere die Temperaturdaten
@@ -779,34 +737,21 @@ SensorType type;
   sensors.requestTemperatures();
 
   // Iteriere durch alle Sensoren
-  for (int i = 0; i < sensors.getDeviceCount(); i++) {
-    // Ermittle die Adresse
-    sensors.getAddress(addr, i); 
-    address = deviceAddrToStr(addr);
-    strcpy (addressC, address.c_str());
-
-    // Ermittle die Temperatur
-    value = sensors.getTempCByIndex(i);
-
-    // Prüfe, ob der Typ (="t") passt
-    if (getSensorType(addressC, type)) {
-      if (type == 't') {
-        // Aktualisiere die Liste
-        updateSensorValue(addressC, value);
-      }
+  for (int i = 0; i < numberOfSensors; i++) {
+    if (sensorList[i].type == 't') {
+      // Aktualisiere die Liste
+      updateSensorValue(sensorList[i].address, sensors.getTempC(sensorList[i].deviceAddress));
     }
-  }  
-
-  Serial.println("getTemperatures() end");
+  }
+  Serial.println("updateTemperatures() end");
 }
 
 void setup1Wire() {
-  byte addrArray[8];
-  float value;
-  String address;
+  byte          addrArray[8];
+  String        address;
   SensorAddress addressC;
-  SensorName nameC;
-  SensorType typeC;
+  SensorName    nameC;
+  SensorType    typeC;
   DeviceAddress addr;
 
   Serial.println("setup1Wire() begin");
@@ -829,19 +774,11 @@ void setup1Wire() {
 
   // Iteriere durch alle Sensoren
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
-
-    /*
-    // Ermittle die Temperatur
-    Serial.println("  Ermittle Temperatur Sensor " + String(i));
-    value = sensors.getTempCByIndex(i);
-    Serial.print("  Temperatur Sensor " + String(i) + ": ");
-    Serial.println(value);
-    */
-
+    
     // Ermittle die Adresse
     Serial.println("  Ermittle Adresse Sensor " + String(i));
     sensors.getAddress(addr, i); 
-    address = deviceAddrToStr(addr);
+    address = deviceAddressToStr(addr);
     strcpy (addressC, address.c_str());
     Serial.println("  address: " + address);
     Serial.print("  addressC: ");
@@ -865,8 +802,8 @@ void setup1Wire() {
 
     addSensor(addressC, nameC, typeC, 0);
   }  
-  getTemperatures();
-  getLevels();
+  updateTemperatures();
+  updateLevels();
   Serial.println("setup1Wire() end");
 }
 
@@ -882,7 +819,7 @@ String getValuesAsHtml() {
   for (int i = 0; i < sensors.getDeviceCount(); i++) {
     tempC = sensors.getTempCByIndex(i);
     sensors.getAddress(addr, i);
-    address = deviceAddrToStr(addr);
+    address = deviceAddressToStr(addr);
     temp = String(tempC);
     returnString = returnString + address.substring(0, address.length()-2) + "-<b>" + address.substring(address.length()-2) + "</b>: " + temp + " &#8451;</br>";
     Serial.println("  Ermittle Inhalt für Webserver: " + returnString);
@@ -1179,8 +1116,8 @@ void loop() {
 
   checkWiFi();
 
-  getTemperatures();
-  getLevels();
+  updateTemperatures();
+  updateLevels();
 
   displayValues(); 
 
