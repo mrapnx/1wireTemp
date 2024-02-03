@@ -116,12 +116,16 @@ void printConfig(Config &pconfig);
 void copyConfig(const Config &from, Config &to);
 
 // Sensorlisten-Methoden
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value);
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueMin min, const SensorValueMax max, float value);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
 void clearSensorList();
 void getSensorName(const SensorAddress address, SensorName); 
+void getSensorValueFormat(const SensorAddress address, SensorValueFormat format);
+float getSensorValueMin(const SensorAddress address);
+float getSensorValueMax(const SensorAddress address);
 boolean getSensorType(const SensorAddress address, SensorType& type);
+char* getSensorDisplayValue(const SensorAddress address);
 
 // Ein- & Ausgabe-Methoden
 void updateTemperatures();
@@ -628,6 +632,8 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   strcpy(tempArray[numberOfSensors].name, name);
   tempArray[numberOfSensors].type = type;
   strcpy(tempArray[numberOfSensors].format, format);
+  tempArray[numberOfSensors].min = min;
+  tempArray[numberOfSensors].max = max;
   tempArray[numberOfSensors].value = value;
   strToDeviceAddress(String(address), tempDs2438DeviceAddress);
   copyDeviceAddress(tempDs2438DeviceAddress, tempArray[numberOfSensors].deviceAddress);
@@ -663,6 +669,66 @@ boolean getSensorType(const SensorAddress address, SensorType& type) {
    }
    return false;
 }
+
+char* getSensorDisplayValue(const SensorAddress address) {
+  char* result = new char[10];
+  return result;
+}
+
+
+void getSensorValueFormat(const SensorAddress address, SensorValueFormat format) {
+  strcpy(format, "%0f");
+  // Tacker durch das sensorConfig Array in config durch
+  for (int i = 0; i < sensorConfigCount; i++) {
+    // Vergleich die Adresse aus dem Parameter mit der in der Config
+    if (strcmp(address, config.sensorConfig[i].address) == 0) {
+      // Und gib bei Übereinstimmung den Namen zurück
+      strcpy(format, config.sensorConfig[i].format);
+      Serial.print("getSensorValueFormat(): Sensor gefunden: Adresse=");
+      Serial.print(address);
+      Serial.print(" format=");
+      Serial.println(format);
+      break;
+    }
+  }
+}
+
+float getSensorValueMin(const SensorAddress address) {
+  float result = 0;
+  // Tacker durch das sensorConfig Array in config durch
+  for (int i = 0; i < sensorConfigCount; i++) {
+    // Vergleich die Adresse aus dem Parameter mit der in der Config
+    if (strcmp(address, config.sensorConfig[i].address) == 0) {
+      // Und gib bei Übereinstimmung den Min-Wert zurück
+      result = config.sensorConfig[i].min;
+      Serial.print("getSensorValueMin(): Sensor gefunden: Adresse=");
+      Serial.print(address);
+      Serial.print(" min=");
+      Serial.println(result);
+      break;
+    }
+  }
+  return result;
+}
+
+float getSensorValueMax(const SensorAddress address) {
+  float result = 0;
+  // Tacker durch das sensorConfig Array in config durch
+  for (int i = 0; i < sensorConfigCount; i++) {
+    // Vergleich die Adresse aus dem Parameter mit der in der Config
+    if (strcmp(address, config.sensorConfig[i].address) == 0) {
+      // Und gib bei Übereinstimmung den Max-Wert zurück
+      result = config.sensorConfig[i].max;
+      Serial.print("getSensorValueMax(): Sensor gefunden: Adresse=");
+      Serial.print(address);
+      Serial.print(" max=");
+      Serial.println(result);
+      break;
+    }
+  }
+  return result;
+}
+
 
 void getSensorName(const SensorAddress address, SensorName name) {
   strcpy(name, "");
@@ -715,7 +781,6 @@ void setupDisplay() {
   Serial.println("setupDisplay() begin");
   tft.begin();
   tft.setBitrate(24000000);
-  tft.clearScreen();
   tft.defineScrollArea(128, 128);
   tft.setCursor(xBegin, yBegin);
   tft.println("Start");
@@ -812,12 +877,13 @@ void updateTemperatures() {
 }
 
 void setup1Wire() {
-  byte          addrArray[8];
-  String        address;
-  SensorAddress addressC;
-  SensorName    nameC;
-  SensorType    typeC;
-  DeviceAddress addr;
+  byte              addrArray[8];
+  String            address;
+  SensorAddress     addressC;
+  SensorName        nameC;
+  SensorType        typeC;
+  SensorValueFormat format;
+  DeviceAddress     addr;
 
   Serial.println("setup1Wire() begin");
     // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
@@ -855,6 +921,12 @@ void setup1Wire() {
     Serial.print("  Name Sensor " + String(i) + ": ");
     Serial.println(nameC);
 
+    // Ermittle das Format
+    Serial.println("  Ermittle Format Sensor " + String(i));
+    getSensorValueFormat(addressC, format);
+    Serial.print("  Format Sensor " + String(i) + ": ");
+    Serial.println(format);
+
     // Ermittle den Typ
     Serial.println("  Ermittle Typ Sensor " + String(i));
     if (getSensorTypeByAddress(addressC, typeC) == true) {
@@ -865,7 +937,7 @@ void setup1Wire() {
     Serial.print("  Typ Sensor " + String(i) + ": ");
     Serial.println(typeC);
 
-    addSensor(addressC, nameC, typeC, 0);
+    addSensor(addressC, nameC, typeC, format, getSensorValueMin(addressC), getSensorValueMin(addressC), 0);
   }  
   updateTemperatures();
   updateLevels();
@@ -873,20 +945,27 @@ void setup1Wire() {
 }
 
 String getValuesAsHtml() {
-// TODO: Informationen aus der sensorList beziehen
   String address;
   String temp;
-  DeviceAddress addr;
+  SensorName name;
+  char buffer[10];
   String returnString = "";
-  float tempC;
 
   Serial.println("getValuesAsHtml() begin");
-  for (int i = 0; i < sensors.getDeviceCount(); i++) {
-    tempC = sensors.getTempCByIndex(i);
-    sensors.getAddress(addr, i);
-    address = deviceAddressToStr(addr);
-    temp = String(tempC);
-    returnString = returnString + address.substring(0, address.length()-2) + "-<b>" + address.substring(address.length()-2) + "</b>: " + temp + " &#8451;</br>";
+  for (int i = 0; i < numberOfSensors; i++) {
+  // Iteriere durch alle Sensoren
+    // und wenn ein Name gesetzt ist,
+    if (!sensorList[i].name[0] == '\0') {
+      // Nimm den
+      strcpy(name, sensorList[i].name);
+    } else {
+      // Sonst die Adresse
+      strcpy(name, sensorList[i].address);
+    }
+    // Formattiere den Wert entspr. dem Value String
+    sprintf(buffer, sensorList[i].format, sensorList[i].value, sensorList[i].min, sensorList[i].max);
+    returnString = returnString + String(name) + ": " + String(buffer) + "</br>";
+
     Serial.println("  Ermittle Inhalt für Webserver: " + returnString);
   }
   return returnString;
@@ -898,8 +977,9 @@ void setup() {
   Serial.begin(9600);
   delay(500);
   Serial.println("setup() begin");
-  pinMode(LED_BUILTIN, OUTPUT);
 
+  pinMode(LED_BUILTIN, OUTPUT);
+  
   // Konfig
   setupMemory();
   loadConfig(); // Achtung! Schlägt direkt nach dem Upload fehl
@@ -917,8 +997,10 @@ void setup() {
   // Öffne den 1-Wire Bus
   setup1Wire();
 
+  // Gib die gefundenen Sensoren seriell aus
   printSensors();
 
+  // Leere den Bildschirm
   tft.clearScreen();
 }
 
@@ -1067,7 +1149,7 @@ void displayValues() {
   }
   displayLast = millis();
 
-  Serial.println("displayTemperatures() begin"); 
+  Serial.println("displayValues() begin"); 
 
   tft.fillRect(xBegin, yBegin, 128, 20, 0x0000);
   tft.setCursor(xBegin, yBegin);
@@ -1088,28 +1170,13 @@ void displayValues() {
       strcpy(name, sensorList[i].address);
     }
     // Formattiere den Wert entspr. dem Value String
-    Serial.print("Sensor ");
-    Serial.print(i);
-    Serial.print(" Name: ");
-    Serial.print(name);
-    Serial.print(" Format:");
-    Serial.print(sensorList[i].format);
-    Serial.print(" Value:");
-    Serial.print(sensorList[i].value);
-    Serial.print(" min: ");
-    Serial.print(sensorList[i].min);
-    Serial.print(" min: ");
-    Serial.println(sensorList[i].max);
     sprintf(buffer, sensorList[i].format, sensorList[i].value, sensorList[i].min, sensorList[i].max);
-    Serial.print("Buffer: ");
-    Serial.println(buffer);
     tft.print(name);
     tft.print(": ");
     tft.println(buffer);
-
   }
 
-  Serial.println("displayTemperatures() end"); 
+  Serial.println("displayValues() end"); 
 }
 
 

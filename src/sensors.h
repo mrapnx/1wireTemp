@@ -13,7 +13,7 @@ struct SensorData {
   DeviceAddress     deviceAddress;
   SensorType        type    = '.';
   SensorName        name    = "";
-  SensorValueFormat format  = "";
+  SensorValueFormat format  = "%0f";
   SensorValueMin    min;
   SensorValueMax    max;
   float             value;
@@ -22,7 +22,7 @@ struct SensorData {
 struct SensorConfig {
   SensorAddress     address = "";
   SensorName        name    ="";
-  SensorValueFormat format  = "%f";
+  SensorValueFormat format  = "%0f";
   SensorValueMin    min;
   SensorValueMax    max;
 };
