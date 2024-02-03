@@ -16,7 +16,7 @@
 typedef struct {
   char    head           [5] = "MRAb";
   // WLAN
-  boolean wifiActive         = false;  // MRA: Debug
+  boolean wifiActive         = true;
   char    wifiMode           = 'a'; // a = Access Point / c = Client
   int     wifiTimeout        = 10;
   char    wifiSsid      [21] = "ArduinoAP";
@@ -103,10 +103,13 @@ FlashStorage(configStorage, Config);
 Config config;
 
 // *************** Deklaration der Funktionen
+// Zustands-Methoden
 boolean sensorsFine();
 boolean wifiFine();
 boolean checkWiFi();
 boolean connectToMQTT();
+
+// Config-Methoden
 boolean loadConfig();
 void saveConfig();
 void printConfig(Config &pconfig);
@@ -128,8 +131,12 @@ void printSensorAddresses();
 void printWiFiStatus();
 void displayValues(); 
 void sendTemperaturesToMQTT();
+
+// HTTP-Methoden
 char* getValue(const String& data, const char* key);
 String getValuesAsHtml();
+char* urlDecode(const char* input);
+int hexToDec(char c);
 void htmlGetHeader(int refresh);
 void htmlGetStatus();
 void htmlGetConfig();
@@ -144,9 +151,38 @@ void setupWifi();
 void setup();
 
 // ***************  Funktionen
+char* urlDecode(const char* input) {
+  // Decode URL-encoded data
+  String decoded = "";
+  char a, b;
+  for (size_t i = 0; i < strlen(input); i++) {
+    if (input[i] == '%') {
+      a = input[++i];
+      b = input[++i];
+      decoded += char((hexToDec(a) << 4) | hexToDec(b));
+    } else {
+      if (input[i] == '+') {
+        decoded += ' ';
+      } else {
+        decoded += input[i];
+      }
+    }
+  }
+
+  char* result = new char[decoded.length() + 1];
+  strcpy(result, decoded.c_str());
+  return result;
+}
+
+
+int hexToDec(char c) {
+  return (c >= '0' && c <= '9') ? c - '0' : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : 0;
+}
+
 char* getValue(const String& data, const char* key) {
   static char result[100]; // Annahme: Der Wert passt in einen 100-Byte-Puffer
   String delimiter = "=";
+  char temp[100];
   int keyIndex = data.indexOf(key + delimiter);
   int endIndex;
 
@@ -168,9 +204,13 @@ char* getValue(const String& data, const char* key) {
 
   // Füge den nullterminierenden Zeichen manuell hinzu
   result[sizeof(result) - 1] = '\0';
-
-  Serial.print("getValue() end: ");
+  Serial.print("  result vor urldecode: ");
   Serial.println(result);
+  strcpy(temp, urlDecode(result));
+  strcpy(result, temp);
+  Serial.print("  result nach urldecode: ");
+  Serial.println(result);
+  Serial.println("getValue()");
   return result;
 }
 
@@ -196,6 +236,8 @@ void copyConfig(const Config &from, Config &to) {
     strcpy(to.sensorConfig[i].address, from.sensorConfig[i].address);  
     strcpy(to.sensorConfig[i].name,    from.sensorConfig[i].name);  
     strcpy(to.sensorConfig[i].format,  from.sensorConfig[i].format);  
+           to.sensorConfig[i].min    = from.sensorConfig[i].max;
+           to.sensorConfig[i].max    = from.sensorConfig[i].max;
   }
   Serial.println("copyConfig() end");
 };
@@ -245,6 +287,10 @@ void printConfig(Config &pconfig) {
     Serial.print(pconfig.sensorConfig[i].name);  
     Serial.print(" Format: ");  
     Serial.println(pconfig.sensorConfig[i].format);  
+    Serial.print(" Min: ");  
+    Serial.println(pconfig.sensorConfig[i].min);  
+    Serial.print(" Max: ");  
+    Serial.println(pconfig.sensorConfig[i].max);  
   }
 
   Serial.println("printConfig() end");
@@ -325,7 +371,7 @@ void htmlGetConfig() {
   htmlGetHeader(0);
   client.print("<html><body>");
   client.print("<h1>Konfiguration</h1>");
-  client.print("<form method='post' action='/update'>");
+  client.print("<form method='get' action='/update'>");
   client.print("<p>WLAN aktiv: <input type='checkbox' name='wifiActive' " + String(config.wifiActive ? "checked" : "") + "></p>");
   client.print("<p>SSID: <input type='text' name='wifiSsid' value='" + String(config.wifiSsid) + "'></p>");
   client.print("<p>Passwort: <input type='text' name='wifiPass' value='" + String(config.wifiPass) + "'></p>");
@@ -345,12 +391,16 @@ void htmlGetConfig() {
   client.print("<th>Adresse</th>");
   client.print("<th>Name</th>");
   client.print("<th>Format</th>");
+  client.print("<th>Min</th>");
+  client.print("<th>Max</th>");
   for (int i = 0; i < sensorConfigCount; i++) {
     client.print("<tr>");  
     client.print("<td>" + String(i) + "</td>");  
-    client.print("<td><input type='text' name='sensorAddress" + String(i) + "' value='" + String(config.sensorConfig[i].address) + "'></td>");  
-    client.print("<td><input type='text' name='sensorName"    + String(i) + "' value='" + String(config.sensorConfig[i].name)    + "'></td>");  
-    client.print("<td><input type='text' name='sensorFormat"  + String(i) + "' value='" + String(config.sensorConfig[i].format)  + "'></td>");  
+    client.print("<td><input type='text' name='sensorAddress"     + String(i) + "' value='" + String(config.sensorConfig[i].address) + "'></td>");  
+    client.print("<td><input type='text' name='sensorName"        + String(i) + "' value='" + String(config.sensorConfig[i].name)    + "'></td>");  
+    client.print("<td><input type='text' name='sensorValueFormat" + String(i) + "' value='" + String(config.sensorConfig[i].format)  + "'></td>");  
+    client.print("<td><input type='text' name='sensorValueMin"    + String(i) + "' value='" + String(config.sensorConfig[i].min)     + "'></td>");  
+    client.print("<td><input type='text' name='sensorValueMax"    + String(i) + "' value='" + String(config.sensorConfig[i].max)     + "'></td>");  
     client.print("</tr>");  
   }
   client.print("</table>");
@@ -373,7 +423,7 @@ void htmlGetConfig() {
 void htmlSetConfig() {
   char c;
   char no[2];
-  char name[17];
+  char name[20];
   Serial.println("htmlSetConfig() begin");
   // Lese den HTTP-Body, der die aktualisierten Daten enthält
   String body = "";
@@ -412,9 +462,17 @@ void htmlSetConfig() {
     strcat(name, no);
     strcpy(config.sensorConfig[i].name, getValue(body, name));
 
-    strcpy(name, "sensorFormat");
+    strcpy(name, "sensorValueFormat");
     strcat(name, no);
     strcpy(config.sensorConfig[i].format, getValue(body, name));
+
+    strcpy(name, "sensorValueMin");
+    strcat(name, no);
+    config.sensorConfig[i].min = atof(getValue(body, name)); // Umwandlung nach Float
+
+    strcpy(name, "sensorValueMax");
+    strcat(name, no);
+    config.sensorConfig[i].max = atof(getValue(body, name)); // Umwandlung nach Float
   }
 
   saveConfig();
@@ -455,7 +513,7 @@ char c;
   client = server.available();
   // Wenn sich ein Client verbunden hat,
   if (client) {                             
-    Serial.println("httpProcessRequests() new client");           
+    Serial.println("httpProcessRequests() new client");
     // Solange der Client verbunden ist,
     while (client.connected()) {            
       // und wenn Daten vom Client vorliegen
@@ -463,9 +521,9 @@ char c;
         // Lies ein Byte
         c = client.read();
         // und gibt es seriell aus                  
-        Serial.write(c);                    
+        Serial.write(c);         
         // wenn das Byte ein "Newline" ist,
-        if (c == '\n') {                    
+        if (c == '\n') {
           // Wenn die aktuelle Zeile leer ist, haben wir zwei Newlines hintereinander und damit das Ende des Requests
           if (currentLine.length() == 0) {
             Serial.println("GET / => Status");
@@ -512,6 +570,12 @@ char c;
           break;
         }                      
 
+        if (currentLine.endsWith("GET /update")) {
+          htmlSetConfig();
+          htmlGetConfig();
+          break;
+        }                      
+
         // "Neustarten"
         if (currentLine.endsWith("GET /reboot")) {
           //reboot(); TODO: Klappt noch nicht
@@ -545,7 +609,7 @@ void printSensors() {
   }
 }
 
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const float value) {
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueMin min, const SensorValueMax max, float value) {
   SensorData*   tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
   DeviceAddress tempDs2438DeviceAddress;
 
@@ -563,6 +627,7 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   strcpy(tempArray[numberOfSensors].address, address);
   strcpy(tempArray[numberOfSensors].name, name);
   tempArray[numberOfSensors].type = type;
+  strcpy(tempArray[numberOfSensors].format, format);
   tempArray[numberOfSensors].value = value;
   strToDeviceAddress(String(address), tempDs2438DeviceAddress);
   copyDeviceAddress(tempDs2438DeviceAddress, tempArray[numberOfSensors].deviceAddress);
@@ -993,7 +1058,8 @@ boolean connectToMQTT() {
 }
 
 void displayValues() {
-  SensorName name;
+  SensorName  name;
+  char        buffer[10];
 
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < displayLast + (displayInterval * 1000)) {
@@ -1001,12 +1067,14 @@ void displayValues() {
   }
   displayLast = millis();
 
+  Serial.println("displayTemperatures() begin"); 
+
   tft.fillRect(xBegin, yBegin, 128, 20, 0x0000);
   tft.setCursor(xBegin, yBegin);
 
   // Fehlermeldung, wenn keine Sensoren gefunden wurden
   if (numberOfSensors <= 0) {
-    Serial.println("displayTemperatures(): Keine Sensoren gefunden, deren Daten angezeigt werden könnten"); 
+    Serial.println("  Keine Sensoren gefunden, deren Daten angezeigt werden könnten"); 
   }
 
   // Iteriere durch alle Sensoren
@@ -1019,15 +1087,29 @@ void displayValues() {
       // Sonst die Adresse
       strcpy(name, sensorList[i].address);
     }
-    tft.println(String(name) + ": " + sensorList[i].value);
-
-    /*
-    Serial.print("> ");
+    // Formattiere den Wert entspr. dem Value String
+    Serial.print("Sensor ");
+    Serial.print(i);
+    Serial.print(" Name: ");
     Serial.print(name);
-    Serial.print(": ");
-    Serial.println(sensorList[i].value);
-    */
+    Serial.print(" Format:");
+    Serial.print(sensorList[i].format);
+    Serial.print(" Value:");
+    Serial.print(sensorList[i].value);
+    Serial.print(" min: ");
+    Serial.print(sensorList[i].min);
+    Serial.print(" min: ");
+    Serial.println(sensorList[i].max);
+    sprintf(buffer, sensorList[i].format, sensorList[i].value, sensorList[i].min, sensorList[i].max);
+    Serial.print("Buffer: ");
+    Serial.println(buffer);
+    tft.print(name);
+    tft.print(": ");
+    tft.println(buffer);
+
   }
+
+  Serial.println("displayTemperatures() end"); 
 }
 
 

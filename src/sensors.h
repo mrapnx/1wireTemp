@@ -1,23 +1,30 @@
 #include <Arduino.h>
 #include <DallasTemperature.h>
 
-typedef char SensorAddress    [17];
-typedef char SensorType;
-typedef char SensorName       [21];
-typedef char SensorValueFormat[11];
+typedef char  SensorAddress    [17];
+typedef char  SensorType;
+typedef char  SensorName       [21];
+typedef char  SensorValueFormat[11];
+typedef float SensorValueMin;
+typedef float SensorValueMax;
+
 struct SensorData {
   SensorAddress     address = "";
   DeviceAddress     deviceAddress;
   SensorType        type    = '.';
   SensorName        name    = "";
   SensorValueFormat format  = "";
+  SensorValueMin    min;
+  SensorValueMax    max;
   float             value;
 };
 
 struct SensorConfig {
   SensorAddress     address = "";
   SensorName        name    ="";
-  SensorValueFormat format  = "";
+  SensorValueFormat format  = "%f";
+  SensorValueMin    min;
+  SensorValueMax    max;
 };
 
 const int sensorConfigCount = 10;
