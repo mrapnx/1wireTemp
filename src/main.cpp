@@ -39,20 +39,22 @@ typedef struct {
 // WLAN-Port
 const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 
+// Reset Pin
+#define RST_PIN  21   // D21
 
 // Display
-                      // Rot   LED   +3.3V
-#define TFT_CLK  13   // Gelb  SCK   D13
-#define TFT_MOSI 11   // Braun SDA   D11
-#define TFT_DC   4    // Grün  A0    D5
-#define TFT_RST  3    // Lila  RES   D2
-#define TFT_CS   5    // Blau  CS    D3
-                      // Schw. GND   GND
-                      // Rot   VCC   +3.3V                     
-#define TFT_MISO 12   //   - D12
-int     xBegin     = 0;
-int     yBegin     = 10;
+#define TFT_LED  3    // Rot    LED   D3 +3.3V
+#define TFT_CLK  13   // Orange SCK   D13 / Nicht änderbar
+#define TFT_MOSI 11   // Braun  SDA   D11 / Nicht änderbar
+#define TFT_DC   6    // Grün   A0    D6
+#define TFT_RST  7    // Lila   RES   D7
+#define TFT_CS   8    // Blau   CS    D8
+                      // Schw.  GND   GND
+                      // Rot    VCC   +3.3V   
 
+int     xBegin      = 0;
+int     yBegin      = 40;
+boolean initalClear = false;
 
 // 1-Wire
 const int PinOneWireBus = 10; // Pin, an dem der 1-Wire-Bus angeschlossen ist // = D10
@@ -135,6 +137,7 @@ void printSensorAddresses();
 void printWiFiStatus();
 void displayValues(); 
 void sendTemperaturesToMQTT();
+void reset();
 
 // HTTP-Methoden
 char* getValue(const String& data, const char* key);
@@ -414,7 +417,7 @@ void htmlGetConfig() {
   client.print("</form>");
   client.print("<br/>");
   client.print("<br/>");
-  // client.print("<a href=\"/reboot\">Neustart</a>"); // TODO: Klappt noch nicht
+  client.print("<a href=\"/reboot\">Neustart</a>"); 
   client.print("<br/>");
   client.print("<br/>");
   client.print("<a href=\"/\">Zur&uuml;ck</a>");
@@ -530,7 +533,7 @@ char c;
         if (c == '\n') {
           // Wenn die aktuelle Zeile leer ist, haben wir zwei Newlines hintereinander und damit das Ende des Requests
           if (currentLine.length() == 0) {
-            Serial.println("GET / => Status");
+            Serial.println("  GET / => Status");
             htmlGetStatus();
             break;
           }
@@ -547,14 +550,14 @@ char c;
 
         // "Konfiguration anzeigen"
         if (currentLine.endsWith("GET /config")) {
-          Serial.println("GET /config => Config");
+          Serial.println("  GET /config => Konfig");
           htmlGetConfig();
           break;
         }
 
         // "Konfiguration laden"
         if (currentLine.endsWith("GET /load")) {
-          Serial.println("GET /load => Load Config");
+          Serial.println("  GET /load => Konfig laden");
           htmlGetHeader(0);
           client.print("<html><body>");
           if (loadConfig()) {
@@ -575,6 +578,7 @@ char c;
         }                      
 
         if (currentLine.endsWith("GET /update")) {
+          Serial.println("  GET /update => Konfig speichern");
           htmlSetConfig();
           htmlGetConfig();
           break;
@@ -582,7 +586,8 @@ char c;
 
         // "Neustarten"
         if (currentLine.endsWith("GET /reboot")) {
-          //reboot(); TODO: Klappt noch nicht
+          Serial.println("  GET /reboot => Neustart");
+          reset();
         }
 
       } else {
@@ -779,9 +784,12 @@ void removeSensor(SensorAddress address) {
 
 void setupDisplay() {
   Serial.println("setupDisplay() begin");
+  pinMode(TFT_LED, OUTPUT);
+  digitalWrite(TFT_LED, HIGH);
   tft.begin();
   tft.setBitrate(24000000);
-  tft.defineScrollArea(128, 128);
+  tft.setRotation(2); // Anschlusspins sind unten
+  tft.defineScrollArea(128-xBegin, 128-yBegin);
   tft.setCursor(xBegin, yBegin);
   tft.println("Start");
   Serial.println("setupDisplay() end");
@@ -1000,8 +1008,6 @@ void setup() {
   // Gib die gefundenen Sensoren seriell aus
   printSensors();
 
-  // Leere den Bildschirm
-  tft.clearScreen();
 }
 
 void printWiFiStatus() {
@@ -1148,9 +1154,13 @@ void displayValues() {
     return;
   }
   displayLast = millis();
-
+ 
   Serial.println("displayValues() begin"); 
 
+  if (!initalClear) {
+    tft.clearScreen();  // Leere den Bildschirm
+    initalClear = true;
+  }
   tft.fillRect(xBegin, yBegin, 128, 20, 0x0000);
   tft.setCursor(xBegin, yBegin);
 
@@ -1179,7 +1189,13 @@ void displayValues() {
   Serial.println("displayValues() end"); 
 }
 
-
+void reset() {
+  Serial.println("reset() begin");
+  pinMode(RST_PIN, OUTPUT);
+  digitalWrite(RST_PIN, HIGH);  
+  digitalWrite(RST_PIN, LOW);  
+  Serial.println("reset() end (Das sollte man eigentlich nicht sehen)");
+}
 
 void sendTemperaturesToMQTT() {
   char topic[30] = "n/a";
