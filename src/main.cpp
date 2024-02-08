@@ -43,12 +43,12 @@ const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 #define RST_PIN  21   // D21
 
 // Display
-#define TFT_LED  3    // Rot    LED   D3 +3.3V
+#define TFT_LED  2    // Rot    LED   D2 +3.3V
 #define TFT_CLK  13   // Orange SCK   D13 / Nicht änderbar
 #define TFT_MOSI 11   // Braun  SDA   D11 / Nicht änderbar
-#define TFT_DC   6    // Grün   A0    D6
-#define TFT_RST  7    // Lila   RES   D7
-#define TFT_CS   8    // Blau   CS    D8
+#define TFT_DC   5    // Grün   A0    D5
+#define TFT_RST  6    // Lila   RES   D6
+#define TFT_CS   7    // Blau   CS    D7
                       // Schw.  GND   GND
                       // Rot    VCC   +3.3V   
 
