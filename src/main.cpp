@@ -42,6 +42,10 @@ const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 // Reset Pin
 #define RST_PIN  21   // D21
 
+// Button Pin
+
+#define BUTTON_PIN 18 // D18
+
 // Display
 #define TFT_LED  2    // Rot    LED   D2 +3.3V
 #define TFT_CLK  13   // Orange SCK   D13 / Nicht änderbar
@@ -80,12 +84,13 @@ unsigned long displayLast = 0;
 unsigned long wifiCheckLast = 0;
 unsigned long blinkLast = 0;
 boolean blinking = false;
+boolean buttonState = false;
 
 // 1-Wire
-SensorData* sensorList = nullptr;         // Zeiger auf das Array von SensorData
-int numberOfSensors = 0;                  // Aktuelle Anzahl von Sensoren
-OneWire oneWire(PinOneWireBus);           // 1-Wire Grundobjekt
-DallasTemperature sensors(&oneWire);      // 1-Wire Objekt für Temperatursensoren
+SensorData*       sensorList = nullptr;       // Zeiger auf das Array von SensorData
+int               numberOfSensors = 0;        // Aktuelle Anzahl von Sensoren
+OneWire           oneWire(PinOneWireBus);     // 1-Wire Grundobjekt
+DallasTemperature sensors(&oneWire);          // 1-Wire Objekt für Temperatursensoren
 
 // Webserver
 IPAddress   ip; 
@@ -137,6 +142,7 @@ void printSensorAddresses();
 void printWiFiStatus();
 void displayValues(); 
 void sendTemperaturesToMQTT();
+boolean getButtonState();
 void reset();
 
 // HTTP-Methoden
@@ -986,8 +992,12 @@ void setup() {
   delay(500);
   Serial.println("setup() begin");
 
+  // Eingebaute LED als Zustands-Indikator
   pinMode(LED_BUILTIN, OUTPUT);
-  
+
+  // Eingabe-Knopf
+  pinMode(BUTTON_PIN, INPUT);
+
   // Konfig
   setupMemory();
   loadConfig(); // Achtung! Schlägt direkt nach dem Upload fehl
@@ -1189,6 +1199,20 @@ void displayValues() {
   Serial.println("displayValues() end"); 
 }
 
+boolean getButtonState() {
+  boolean newState;
+  newState = digitalRead(BUTTON_PIN);
+  if (!newState == buttonState) {
+    buttonState = newState;
+    Serial.print("Knopf betätigt: ");
+    Serial.println(int(buttonState));
+    return true;
+  } else {
+    return false;
+  }
+}
+
+
 void reset() {
   Serial.println("reset() begin");
   pinMode(RST_PIN, OUTPUT);
@@ -1278,6 +1302,8 @@ void printSensorAddresses() {
 
 void loop() {
   blink();
+
+  getButtonState();
 
   checkWiFi();
 
