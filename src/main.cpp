@@ -11,6 +11,7 @@
 #include <DS2438.h>
 #include "sensors.h"
 #include "wifi.h"
+#include <fmt/core.h>
 
 // *************** Konfig-Grundeinstellungen
 typedef struct {
@@ -516,9 +517,9 @@ char c;
     // Wenn sie sich geändert hat, persistiere den Zustand
     status = WiFi.status();
     if (status == WL_AP_CONNECTED) {
-      Serial.println("Device connected to AP");
+      Serial.println("  Device connected to AP");
     } else {
-      Serial.println("Device disconnected from AP");
+      Serial.println("  Device disconnected from AP");
     }
   }
 
@@ -611,9 +612,9 @@ char c;
 }
 
 void printSensors() {
-  Serial.println("Anzahl Sensoren im Array: " + String(numberOfSensors));
+  Serial.println("  Anzahl Sensoren im Array: " + String(numberOfSensors));
   for (int i = 0; i < numberOfSensors; i++) {
-    Serial.print("Sensor " + String(i) + " Adresse: ");
+    Serial.print("  Sensor " + String(i) + " Adresse: ");
     Serial.print(sensorList[i].address);
     Serial.print(" Name: ");
     Serial.print(sensorList[i].name);
@@ -1018,6 +1019,7 @@ void setup() {
   // Gib die gefundenen Sensoren seriell aus
   printSensors();
 
+  Serial.println("setup() end");
 }
 
 void printWiFiStatus() {
@@ -1035,7 +1037,7 @@ void printWiFiStatus() {
   Serial.print("  IP Address: ");
   Serial.println(ip);
 
-  Serial.print("Server Status: ");
+  Serial.print("  Server Status: ");
   Serial.println(server.status());
   Serial.println("printWiFiStatus() end");
 }
@@ -1204,7 +1206,7 @@ boolean getButtonState() {
   newState = digitalRead(BUTTON_PIN);
   if (!newState == buttonState) {
     buttonState = newState;
-    Serial.print("Knopf betätigt: ");
+    Serial.print("  Knopf betätigt: ");
     Serial.println(int(buttonState));
     return true;
   } else {
