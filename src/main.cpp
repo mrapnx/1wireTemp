@@ -11,7 +11,6 @@
 #include <DS2438.h>
 #include "sensors.h"
 #include "wifi.h"
-#include <fmt/core.h>
 
 // *************** Konfig-Grundeinstellungen
 typedef struct {
@@ -1192,6 +1191,7 @@ void displayValues() {
       strcpy(name, sensorList[i].address);
     }
     // Formattiere den Wert entspr. dem Value String
+    String test;
     sprintf(buffer, sensorList[i].format, sensorList[i].value, sensorList[i].min, sensorList[i].max);
     tft.print(name);
     tft.print(": ");
