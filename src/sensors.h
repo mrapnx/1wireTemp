@@ -5,26 +5,29 @@ typedef char  SensorAddress    [17];
 typedef char  SensorType;
 typedef char  SensorName       [21];
 typedef char  SensorValueFormat[11];
+typedef int   SensorValuePrecision;
 typedef float SensorValueMin;
 typedef float SensorValueMax;
 
 struct SensorData {
-  SensorAddress     address = "";
-  DeviceAddress     deviceAddress;
-  SensorType        type    = '.';
-  SensorName        name    = "";
-  SensorValueFormat format  = "%0f";
-  SensorValueMin    min;
-  SensorValueMax    max;
-  float             value;
+  SensorAddress         address    = "";
+  DeviceAddress         deviceAddress;
+  SensorType            type       = '.';
+  SensorName            name       = "";
+  SensorValueFormat     format     = "%s";
+  SensorValuePrecision  precision  = 1;
+  SensorValueMin        min        = -1;
+  SensorValueMax        max        = -1;
+  float                 value;
 };
 
 struct SensorConfig {
-  SensorAddress     address = "";
-  SensorName        name    ="";
-  SensorValueFormat format  = "%0f";
-  SensorValueMin    min;
-  SensorValueMax    max;
+  SensorAddress         address   = "";
+  SensorName            name      = "";
+  SensorValueFormat     format    = "%s";
+  SensorValuePrecision  precision = 1;
+  SensorValueMin        min       = -1;
+  SensorValueMax        max       = -1;
 };
 
 const int sensorConfigCount = 10;
@@ -37,8 +40,30 @@ const char* deviceAddressToChar(DeviceAddress addr);
 bool strToDeviceAddress(const String &str, DeviceAddress &addr);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType);
 void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
+void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]);
 
 // ***************  Funktionen
+void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]) {
+  char stringBuffer[30] = "";
+  float calcedValue = -1;
+
+  // Wenn min oder max nicht gesetzt sind
+  if (min < 0 || max < 0) {
+    // Erfolgt keine Umrechnung, sondern die Übernahme des float Wertes
+    calcedValue = sensorValue;
+  } else {
+    // Plausi-Prüfung
+    if (sensorValue >= min && sensorValue <= max && max > min) {
+      calcedValue = (sensorValue - min) / (max - min) * 100;
+    } else {
+      calcedValue = sensorValue;
+    }
+  }
+  dtostrf(calcedValue, 0, precision, stringBuffer);
+  sprintf(displayValue, formatString, stringBuffer);
+}
+
+
 byte convertHexCStringToByte(const char* hexString) {
   // Erstelle einen temporären C-String mit den ersten beiden Zeichen des Eingabe-C-Strings
   char tempString[3];

@@ -246,11 +246,12 @@ void copyConfig(const Config &from, Config &to) {
   
   // Sensor-Konfig
   for (int i = 0; i < sensorConfigCount; i++) {
-    strcpy(to.sensorConfig[i].address, from.sensorConfig[i].address);  
-    strcpy(to.sensorConfig[i].name,    from.sensorConfig[i].name);  
-    strcpy(to.sensorConfig[i].format,  from.sensorConfig[i].format);  
-           to.sensorConfig[i].min    = from.sensorConfig[i].max;
-           to.sensorConfig[i].max    = from.sensorConfig[i].max;
+    strcpy(to.sensorConfig[i].address,    from.sensorConfig[i].address);  
+    strcpy(to.sensorConfig[i].name,       from.sensorConfig[i].name);  
+    strcpy(to.sensorConfig[i].format,     from.sensorConfig[i].format);  
+           to.sensorConfig[i].precision = from.sensorConfig[i].precision;
+           to.sensorConfig[i].min       = from.sensorConfig[i].min;
+           to.sensorConfig[i].max       = from.sensorConfig[i].max;
   }
   Serial.println("copyConfig() end");
 };
@@ -299,9 +300,11 @@ void printConfig(Config &pconfig) {
     Serial.print(" Name: ");  
     Serial.print(pconfig.sensorConfig[i].name);  
     Serial.print(" Format: ");  
-    Serial.println(pconfig.sensorConfig[i].format);  
+    Serial.print(pconfig.sensorConfig[i].format);  
+    Serial.print(" Precision: ");  
+    Serial.print(pconfig.sensorConfig[i].precision);  
     Serial.print(" Min: ");  
-    Serial.println(pconfig.sensorConfig[i].min);  
+    Serial.print(pconfig.sensorConfig[i].min);  
     Serial.print(" Max: ");  
     Serial.println(pconfig.sensorConfig[i].max);  
   }
@@ -404,16 +407,18 @@ void htmlGetConfig() {
   client.print("<th>Adresse</th>");
   client.print("<th>Name</th>");
   client.print("<th>Format</th>");
+  client.print("<th>Dezimalstellen</th>");
   client.print("<th>Min</th>");
   client.print("<th>Max</th>");
   for (int i = 0; i < sensorConfigCount; i++) {
     client.print("<tr>");  
     client.print("<td>" + String(i) + "</td>");  
-    client.print("<td><input type='text' name='sensorAddress"     + String(i) + "' value='" + String(config.sensorConfig[i].address) + "'></td>");  
-    client.print("<td><input type='text' name='sensorName"        + String(i) + "' value='" + String(config.sensorConfig[i].name)    + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueFormat" + String(i) + "' value='" + String(config.sensorConfig[i].format)  + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueMin"    + String(i) + "' value='" + String(config.sensorConfig[i].min)     + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueMax"    + String(i) + "' value='" + String(config.sensorConfig[i].max)     + "'></td>");  
+    client.print("<td><input type='text' name='sensorAddress"        + String(i) + "' value='" + String(config.sensorConfig[i].address)   + "'></td>");  
+    client.print("<td><input type='text' name='sensorName"           + String(i) + "' value='" + String(config.sensorConfig[i].name)      + "'></td>");  
+    client.print("<td><input type='text' name='sensorValueFormat"    + String(i) + "' value='" + String(config.sensorConfig[i].format)    + "'></td>");  
+    client.print("<td><input type='text' name='sensorValuePrecision" + String(i) + "' value='" + String(config.sensorConfig[i].precision) + "'></td>");  
+    client.print("<td><input type='text' name='sensorValueMin"       + String(i) + "' value='" + String(config.sensorConfig[i].min)       + "'></td>");  
+    client.print("<td><input type='text' name='sensorValueMax"       + String(i) + "' value='" + String(config.sensorConfig[i].max)       + "'></td>");  
     client.print("</tr>");  
   }
   client.print("</table>");
@@ -478,6 +483,10 @@ void htmlSetConfig() {
     strcpy(name, "sensorValueFormat");
     strcat(name, no);
     strcpy(config.sensorConfig[i].format, getValue(body, name));
+
+    strcpy(name, "sensorValuePrecision");
+    strcat(name, no);
+    config.sensorConfig[i].precision = atoi(getValue(body, name)); // Umwandlung nach Int
 
     strcpy(name, "sensorValueMin");
     strcat(name, no);
@@ -986,41 +995,12 @@ String getValuesAsHtml() {
   Serial.println("getValuesAsHtml() end");
 }
 
-void sensorValueToDisplay(const float sensorValue, const char formatString[30], const int precision, const int min, const int max, char displayValue[30]) {
-  char stringBuffer[30] = "";
-  float calcedValue = -1;
-
-  dtostrf(sensorValue, 0, precision, stringBuffer);
-  sprintf(displayValue, formatString, stringBuffer);
-}
-
-void test() {
-  Serial.println("test() begin");
-  
-  char buffer[30] = "na";
-  sensorValueToDisplay(2.617, "Meine Temperatur: %s °C", 1, -1, -1, buffer);
-  Serial.print("buffer: ");
-  Serial.println(buffer);
-
-  sensorValueToDisplay(50, "Mein Füllstand: %s %", 0, 10, 50, buffer);
-  Serial.print("buffer: ");
-  Serial.println(buffer);
-  Serial.println("test() end");
-
-    delay(1000);
-
-
-}
-
 void setup() {
   // Starte die serielle Kommunikation
   Serial.begin(9600);
   delay(500);
   Serial.println("setup() begin");
 
-  for (int i = 0; i < 10000; i++) {
-    test();
-  }
   // Eingebaute LED als Zustands-Indikator
   pinMode(LED_BUILTIN, OUTPUT);
 
@@ -1220,8 +1200,7 @@ void displayValues() {
       strcpy(name, sensorList[i].address);
     }
     // Formattiere den Wert entspr. dem Value String
-    String test;
-    sprintf(buffer, sensorList[i].format, sensorList[i].value, sensorList[i].min, sensorList[i].max);
+    sensorValueToDisplay(sensorList[i].value, sensorList[i].format, sensorList[i].precision, sensorList[i].min, sensorList[i].max, buffer);
     tft.print(name);
     tft.print(": ");
     tft.println(buffer);
