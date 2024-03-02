@@ -986,12 +986,41 @@ String getValuesAsHtml() {
   Serial.println("getValuesAsHtml() end");
 }
 
+void sensorValueToDisplay(const float sensorValue, const char formatString[30], const int precision, const int min, const int max, char displayValue[30]) {
+  char stringBuffer[30] = "";
+  float calcedValue = -1;
+
+  dtostrf(sensorValue, 0, precision, stringBuffer);
+  sprintf(displayValue, formatString, stringBuffer);
+}
+
+void test() {
+  Serial.println("test() begin");
+  
+  char buffer[30] = "na";
+  sensorValueToDisplay(2.617, "Meine Temperatur: %s °C", 1, -1, -1, buffer);
+  Serial.print("buffer: ");
+  Serial.println(buffer);
+
+  sensorValueToDisplay(50, "Mein Füllstand: %s %", 0, 10, 50, buffer);
+  Serial.print("buffer: ");
+  Serial.println(buffer);
+  Serial.println("test() end");
+
+    delay(1000);
+
+
+}
+
 void setup() {
   // Starte die serielle Kommunikation
   Serial.begin(9600);
   delay(500);
   Serial.println("setup() begin");
 
+  for (int i = 0; i < 10000; i++) {
+    test();
+  }
   // Eingebaute LED als Zustands-Indikator
   pinMode(LED_BUILTIN, OUTPUT);
 
