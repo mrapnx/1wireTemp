@@ -46,21 +46,34 @@ void sensorValueToDisplay(const float sensorValue, const SensorValueFormat forma
 void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]) {
   char stringBuffer[30] = "";
   float calcedValue = -1;
+  Serial.println("sensorValueToDisplay() begin");
 
   // Wenn min oder max nicht gesetzt sind
   if (min < 0 || max < 0) {
     // Erfolgt keine Umrechnung, sondern die Übernahme des float Wertes
+    Serial.println("  Keine Umrechnung");
     calcedValue = sensorValue;
   } else {
     // Plausi-Prüfung
     if (sensorValue >= min && sensorValue <= max && max > min) {
+      Serial.println("  Umrechnung");
       calcedValue = (sensorValue - min) / (max - min) * 100;
     } else {
+      Serial.println("  Umrechnung nicht möglich");
       calcedValue = sensorValue;
     }
   }
+  Serial.print("  dtostrf: calcedValue=");
+  Serial.print(calcedValue);
+  Serial.print(" minField=0 precision=");
+  Serial.print(precision);
   dtostrf(calcedValue, 0, precision, stringBuffer);
+  Serial.print("  stringBuffer: ");
+  Serial.println(stringBuffer);
   sprintf(displayValue, formatString, stringBuffer);
+  Serial.print("  displayValue: ");
+  Serial.println(displayValue);
+  Serial.println("sensorValueToDisplay() end");
 }
 
 

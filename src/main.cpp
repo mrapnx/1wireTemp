@@ -123,14 +123,15 @@ void printConfig(Config &pconfig);
 void copyConfig(const Config &from, Config &to);
 
 // Sensorlisten-Methoden
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueMin min, const SensorValueMax max, float value);
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
 void clearSensorList();
 void getSensorName(const SensorAddress address, SensorName); 
 void getSensorValueFormat(const SensorAddress address, SensorValueFormat format);
-float getSensorValueMin(const SensorAddress address);
-float getSensorValueMax(const SensorAddress address);
+SensorValueMin getSensorValueMin(const SensorAddress address);
+SensorValueMax getSensorValueMax(const SensorAddress address);
+SensorValuePrecision getSensorValuePrecision(const SensorAddress address);
 boolean getSensorType(const SensorAddress address, SensorType& type);
 char* getSensorDisplayValue(const SensorAddress address);
 
@@ -441,7 +442,7 @@ void htmlGetConfig() {
 void htmlSetConfig() {
   char c;
   char no[2];
-  char name[20];
+  char name[21];
   Serial.println("htmlSetConfig() begin");
   // Lese den HTTP-Body, der die aktualisierten Daten enthält
   String body = "";
@@ -633,7 +634,7 @@ void printSensors() {
   }
 }
 
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueMin min, const SensorValueMax max, float value) {
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value) {
   SensorData*   tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
   DeviceAddress tempDs2438DeviceAddress;
 
@@ -654,6 +655,7 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   strcpy(tempArray[numberOfSensors].format, format);
   tempArray[numberOfSensors].min = min;
   tempArray[numberOfSensors].max = max;
+  tempArray[numberOfSensors].precision = precision;
   tempArray[numberOfSensors].value = value;
   strToDeviceAddress(String(address), tempDs2438DeviceAddress);
   copyDeviceAddress(tempDs2438DeviceAddress, tempArray[numberOfSensors].deviceAddress);
@@ -697,7 +699,7 @@ char* getSensorDisplayValue(const SensorAddress address) {
 
 
 void getSensorValueFormat(const SensorAddress address, SensorValueFormat format) {
-  strcpy(format, "%0f");
+  strcpy(format, "%s");
   // Tacker durch das sensorConfig Array in config durch
   for (int i = 0; i < sensorConfigCount; i++) {
     // Vergleich die Adresse aus dem Parameter mit der in der Config
@@ -713,7 +715,25 @@ void getSensorValueFormat(const SensorAddress address, SensorValueFormat format)
   }
 }
 
-float getSensorValueMin(const SensorAddress address) {
+SensorValuePrecision getSensorValuePrecision(const SensorAddress address) {
+  float result = 0;
+  // Tacker durch das sensorConfig Array in config durch
+  for (int i = 0; i < sensorConfigCount; i++) {
+    // Vergleich die Adresse aus dem Parameter mit der in der Config
+    if (strcmp(address, config.sensorConfig[i].address) == 0) {
+      // Und gib bei Übereinstimmung den Min-Wert zurück
+      result = config.sensorConfig[i].precision;
+      Serial.print("getSensorValuePrecision(): Sensor gefunden: Adresse=");
+      Serial.print(address);
+      Serial.print(" precision=");
+      Serial.println(result);
+      break;
+    }
+  }
+  return result;
+}
+
+SensorValueMin getSensorValueMin(const SensorAddress address) {
   float result = 0;
   // Tacker durch das sensorConfig Array in config durch
   for (int i = 0; i < sensorConfigCount; i++) {
@@ -731,7 +751,7 @@ float getSensorValueMin(const SensorAddress address) {
   return result;
 }
 
-float getSensorValueMax(const SensorAddress address) {
+SensorValueMax getSensorValueMax(const SensorAddress address) {
   float result = 0;
   // Tacker durch das sensorConfig Array in config durch
   for (int i = 0; i < sensorConfigCount; i++) {
@@ -960,7 +980,7 @@ void setup1Wire() {
     Serial.print("  Typ Sensor " + String(i) + ": ");
     Serial.println(typeC);
 
-    addSensor(addressC, nameC, typeC, format, getSensorValueMin(addressC), getSensorValueMin(addressC), 0);
+    addSensor(addressC, nameC, typeC, format, getSensorValuePrecision(addressC), getSensorValueMin(addressC), getSensorValueMax(addressC), 0);
   }  
   updateTemperatures();
   updateLevels();
@@ -986,7 +1006,7 @@ String getValuesAsHtml() {
       strcpy(name, sensorList[i].address);
     }
     // Formattiere den Wert entspr. dem Value String
-    sprintf(buffer, sensorList[i].format, sensorList[i].value, sensorList[i].min, sensorList[i].max);
+    sensorValueToDisplay(sensorList[i].value, sensorList[i].format, sensorList[i].precision, sensorList[i].min, sensorList[i].max, buffer);
     returnString = returnString + String(name) + ": " + String(buffer) + "</br>";
 
     Serial.println("  Ermittle Inhalt für Webserver: " + returnString);
