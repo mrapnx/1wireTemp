@@ -5,7 +5,8 @@
 //DID YOU HAVE A RED PCB, BLACk PCB or WHAT DISPLAY TYPE???????????? 
 //  ---> SELECT HERE <----
 //#define __144_RED_PCB__//128x128
-#define __144_BLACK_PCB__//128x128
+//#define __144_BLACK_PCB__//128x128
+#define __MR_PCB_VERT__//128x128
 //#define __22_RED_PCB__//240x320
 //---------------------------------------
 
@@ -40,6 +41,15 @@ you can copy those parameters and create setup for different displays.
 	#define __GAMMASET1		//uncomment for another gamma
 	#define __OFFSET		0
 	//not tested
+#elif defined (__MR_PCB_VERT__)
+	#define _TFTWIDTH  		128 // the REAL W resolution of the TFT
+	#define _TFTHEIGHT 		158 // the REAL H resolution of the TFT // MR: Keine Ahnung warum, aber mein Display ist nicht quadratisch. Die ersten 33 Pixel werden verschluckt, dann bleiben offenbar noch 159 :/
+	#define _GRAMWIDTH      128
+	#define _GRAMHEIGH      128
+	#define _GRAMSIZE		_GRAMWIDTH * _GRAMHEIGH//*see note 1
+	#define __COLORSPC		1// 1:GBR - 0:RGB
+	#define __GAMMASET1		//uncomment for another gamma
+	#define __OFFSET		0
 #elif defined (__22_RED_PCB__)
 /*
 Like this one:

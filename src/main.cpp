@@ -60,7 +60,7 @@ const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
                       // Rot    VCC   +3.3V   
 
 int     xBegin      = 0;
-int     yBegin      = 40;
+int     yBegin      = 33;
 boolean initalClear = false;
 
 // 1-Wire
@@ -144,6 +144,7 @@ void updateLevels();
 void printSensors();
 void printSensorAddresses();
 void printWiFiStatus();
+void displayBackground(); 
 void displayValues(); 
 void sendTemperaturesToMQTT();
 boolean getButtonState();
@@ -827,7 +828,10 @@ void setupDisplay() {
   tft.begin();
   tft.setBitrate(24000000);
   tft.setRotation(2); // Anschlusspins sind unten
-  tft.defineScrollArea(128-xBegin, 128-yBegin);
+  Serial.print("  Höhe: ");
+  Serial.print(tft.height());
+  Serial.print("  Breite: ");
+  Serial.println(tft.width());
   tft.setCursor(xBegin, yBegin);
   tft.println("Start");
   Serial.println("setupDisplay() end");
@@ -1070,6 +1074,9 @@ void setup() {
   // Gib die gefundenen Sensoren seriell aus
   printSensors();
 
+  displayBackground();
+
+  delay(99999);
   Serial.println("setup() end");
 }
 
@@ -1208,6 +1215,29 @@ boolean connectToMQTT() {
   return false;
 }
 
+void displayBackground() {
+  int height = tft.height() - yBegin;
+  int lineheight = height / numberOfSensors;
+  int line = yBegin;
+  
+  tft.clearScreen();
+
+  #ifdef DRYRUN
+    tft.fillRect(xBegin, yBegin, 4, 4, WHITE);  // Oben Links
+    tft.fillRect(xBegin, tft.height()-4, 4, 4, WHITE); // Unten Links
+    tft.fillRect(tft.width()-4, yBegin, 4, 4, WHITE); // Oben Rechts
+    tft.fillRect(tft.width()-4, tft.height()-4, 4, 4, WHITE); // Unten Rechts
+  
+  for (int i = 0; i <= numberOfSensors; i++) {
+    tft.setCursor(xBegin, line);
+    tft.println(sensorList[i].name);
+    line = line + lineheight;
+  }
+  #endif
+  
+}
+
+
 void displayValues() {
   SensorName  name;
   char        buffer[10];
@@ -1221,7 +1251,7 @@ void displayValues() {
   Serial.println("displayValues() begin"); 
 
   if (!initalClear) {
-    tft.clearScreen();  // Leere den Bildschirm
+    displayBackground();
     initalClear = true;
   }
   tft.fillRect(xBegin, yBegin, 128, 20, 0x0000);
