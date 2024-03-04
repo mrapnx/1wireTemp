@@ -12,6 +12,9 @@
 #include "sensors.h"
 #include "wifi.h"
 
+#define DRYRUN
+
+
 // *************** Konfig-Grundeinstellungen
 typedef struct {
   char    head           [5] = "MRAb";
@@ -875,13 +878,17 @@ void updateLevels() {
       Serial.print(sensorList[i].address);
       Serial.print(" Adresse ");
       Serial.print((unsigned int)&ds2438, HEX);
-      ds2438.update();
-      if (ds2438.isError()) {
-        Serial.print(" erfolglos abgefragt"); 
-      } else {
-        Serial.print(" erfolgreich abgefragt");
-        updateSensorValue(sensorList[i].address, ds2438.getVoltage(DS2438_CHA));
-      }
+      #ifdef DRYRUN
+        updateSensorValue(sensorList[i].address, random(0,2) + (1 / random(1,10)));
+      #elif
+        ds2438.update();
+        if (ds2438.isError()) {
+          Serial.print(" erfolglos abgefragt"); 
+        } else {
+          Serial.print(" erfolgreich abgefragt");
+          updateSensorValue(sensorList[i].address, ds2438.getVoltage(DS2438_CHA));
+        }
+      #endif
       Serial.print(": Timestamp: ");
       Serial.print(ds2438.getTimestamp());
       Serial.print(": Temperatur = ");
@@ -913,7 +920,11 @@ void updateTemperatures() {
   for (int i = 0; i < numberOfSensors; i++) {
     if (sensorList[i].type == 't') {
       // Aktualisiere die Liste
-      updateSensorValue(sensorList[i].address, sensors.getTempC(sensorList[i].deviceAddress));
+      #ifdef DRYRUN
+        updateSensorValue(sensorList[i].address, random(15,25));
+      #elif
+        updateSensorValue(sensorList[i].address, sensors.getTempC(sensorList[i].deviceAddress));
+      #endif
     }
   }
   Serial.println("updateTemperatures() end");
@@ -982,6 +993,18 @@ void setup1Wire() {
 
     addSensor(addressC, nameC, typeC, format, getSensorValuePrecision(addressC), getSensorValueMin(addressC), getSensorValueMax(addressC), 0);
   }  
+
+  #ifdef DRYRUN
+    if (sensors.getDeviceCount() <= 0) {
+      Serial.println("  Dryrun, erzeuge Dummy-Geräte");
+      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%s °C", 1, -1, -1, 23);
+      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%s °C", 1, -1, -1, 40);
+      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%s %%", 0, 0, 100, 25);
+      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%s %%", 0, 0, 2, 1.5);
+      tft.println("Dryrun, erzeuge Dummy-Geraete");
+    }
+  #endif
+
   updateTemperatures();
   updateLevels();
   Serial.println("setup1Wire() end");
