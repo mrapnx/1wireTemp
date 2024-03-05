@@ -7,12 +7,12 @@
 #include <PubSubClient.h>
 #include <SPI.h>
 #include <FlashStorage_SAMD.h>
-#include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __144_BLACK_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
+#include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __MRA_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
 #include <DS2438.h>
 #include "sensors.h"
 #include "wifi.h"
 
-#define DRYRUN
+// #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
 
 
 // *************** Konfig-Grundeinstellungen
@@ -46,7 +46,6 @@ const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 #define RST_PIN  21   // D21
 
 // Button Pin
-
 #define BUTTON_PIN 18 // D18
 
 // Display
@@ -59,35 +58,34 @@ const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
                       // Schw.  GND   GND
                       // Rot    VCC   +3.3V   
 
-int     xBegin      = 0;
-int     yBegin      = 33;
-boolean initalClear = false;
+int       xBegin      = 0;
+int       yBegin      = 33;
+uint16_t  textColor   = 0xFFFF; // Weiß
+uint16_t  backColor   = 0x0000; // Schwarz
+boolean   initalClear = false;
 
 // 1-Wire
 const int PinOneWireBus = 10; // Pin, an dem der 1-Wire-Bus angeschlossen ist // = D10
 
-// Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
-const int wifiCheckInterval = 10;
-// Frequenz in Sekunden, in der die Temperaturen abgefragt werden
-const int tempCheckInterval = 5;
-// Frequenz in Sekunden, in der die Füllstände abgefragt werden
-const int levelCheckInterval = 2;
-// Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
-const int sendInterval = 10;
-// Frequenz in Sekunden, in der die Temperaturen angezeigt werden
-const int displayInterval = 10;
-// Frequenz, in der die orange LED bei Fehlern blinkt in ms
-const int blinkInterval = 500; 
+// Intervalle
+const int wifiCheckInterval   = 10;  // Frequenz in Sekunden, in der die WLAN-Verbindung versucht wird
+const int tempCheckInterval   = 5;   // Frequenz in Sekunden, in der die Temperaturen abgefragt werden
+const int levelCheckInterval  = 2;   // Frequenz in Sekunden, in der die Füllstände abgefragt werden
+const int sendInterval        = 10;  // Frequenz in Sekunden, in der die Temperaturen an MQTT gesendet werden
+const int displayInterval     = 10;  // Frequenz in Sekunden, in der die Temperaturen angezeigt werden
+const int blinkInterval       = 500; // Frequenz in Millisekunden, in der die orange LED bei Fehlern blinkt
+
 
 // ***************  Globale Variablen
-unsigned long tempCheckLast = 0;
-unsigned long levelCheckLast = 0;
-unsigned long sendLast = 0;
-unsigned long displayLast = 0;
-unsigned long wifiCheckLast = 0;
-unsigned long blinkLast = 0;
-boolean blinking = false;
-boolean buttonState = false;
+unsigned long tempCheckLast   = 0;
+unsigned long levelCheckLast  = 0;
+unsigned long sendLast        = 0;
+unsigned long displayLast     = 0;
+unsigned long wifiCheckLast   = 0;
+unsigned long blinkLast       = 0;
+boolean       blinking        = false;
+boolean       buttonState     = false;
+boolean       dummySensors    = false;
 
 // 1-Wire
 SensorData*       sensorList = nullptr;       // Zeiger auf das Array von SensorData
@@ -819,20 +817,25 @@ void removeSensor(SensorAddress address) {
       break;
     }
   }
+  initalClear = false;
 }
 
 void setupDisplay() {
   Serial.println("setupDisplay() begin");
+
+  // Hintergrundbeleuchtung an
   pinMode(TFT_LED, OUTPUT);
   digitalWrite(TFT_LED, HIGH);
+
   tft.begin();
   tft.setBitrate(24000000);
+  tft.setTextColor(WHITE, BLACK);
   tft.setRotation(2); // Anschlusspins sind unten
+  tft.setCursor(xBegin, yBegin);
   Serial.print("  Höhe: ");
   Serial.print(tft.height());
   Serial.print("  Breite: ");
   Serial.println(tft.width());
-  tft.setCursor(xBegin, yBegin);
   tft.println("Start");
   Serial.println("setupDisplay() end");
 }
@@ -882,9 +885,7 @@ void updateLevels() {
       Serial.print(sensorList[i].address);
       Serial.print(" Adresse ");
       Serial.print((unsigned int)&ds2438, HEX);
-      #ifdef DRYRUN
-        updateSensorValue(sensorList[i].address, random(0,2) + (1 / random(1,10)));
-      #elif
+      if (!dummySensors) {
         ds2438.update();
         if (ds2438.isError()) {
           Serial.print(" erfolglos abgefragt"); 
@@ -892,7 +893,9 @@ void updateLevels() {
           Serial.print(" erfolgreich abgefragt");
           updateSensorValue(sensorList[i].address, ds2438.getVoltage(DS2438_CHA));
         }
-      #endif
+      } else {
+        updateSensorValue(sensorList[i].address, random(0,2) + (1 / random(1,10)));
+      }
       Serial.print(": Timestamp: ");
       Serial.print(ds2438.getTimestamp());
       Serial.print(": Temperatur = ");
@@ -902,7 +905,7 @@ void updateLevels() {
       Serial.print("v, Kanal B = ");
       Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
       Serial.println("v.");
-      //delete &ds2438;  // MRA: Keine Ahnung warum, aber das führt zu nem Freeze
+      //delete &ds2438;  // MR: Keine Ahnung warum, aber das führt zu nem Freeze
     }
   }
   Serial.println("updateLevels() end");
@@ -924,11 +927,11 @@ void updateTemperatures() {
   for (int i = 0; i < numberOfSensors; i++) {
     if (sensorList[i].type == 't') {
       // Aktualisiere die Liste
-      #ifdef DRYRUN
-        updateSensorValue(sensorList[i].address, random(15,25));
-      #elif
+      if (!dummySensors) {
         updateSensorValue(sensorList[i].address, sensors.getTempC(sensorList[i].deviceAddress));
-      #endif
+      } else {
+        updateSensorValue(sensorList[i].address, random(15,25));
+      }
     }
   }
   Serial.println("updateTemperatures() end");
@@ -944,7 +947,8 @@ void setup1Wire() {
   DeviceAddress     addr;
 
   Serial.println("setup1Wire() begin");
-    // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
+
+  // Initialisiere die OneWire- und DallasTemperature-Bibliotheken
   if (oneWire.search(addrArray)) {
   } else {
     tft.println("Keine Geräte gefunden");
@@ -1001,11 +1005,12 @@ void setup1Wire() {
   #ifdef DRYRUN
     if (sensors.getDeviceCount() <= 0) {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
-      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%s °C", 1, -1, -1, 23);
-      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%s °C", 1, -1, -1, 40);
-      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%s %%", 0, 0, 100, 25);
-      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%s %%", 0, 0, 2, 1.5);
       tft.println("Dryrun, erzeuge Dummy-Geraete");
+      dummySensors = true;
+      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", 0, -1, -1, 23);
+      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", 0, -1, -1, 40);
+      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 0, 100, 25);
+      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 0, 2, 1.5);
     }
   #endif
 
@@ -1074,9 +1079,9 @@ void setup() {
   // Gib die gefundenen Sensoren seriell aus
   printSensors();
 
+  // Erzeuge die Sensor-Beschriftungen
   displayBackground();
 
-  delay(99999);
   Serial.println("setup() end");
 }
 
@@ -1216,32 +1221,52 @@ boolean connectToMQTT() {
 }
 
 void displayBackground() {
-  int height = tft.height() - yBegin;
-  int lineheight = height / numberOfSensors;
-  int line = yBegin;
-  
-  tft.clearScreen();
+  int         height      = tft.height() - yBegin;
+  int         lineheight  = height / numberOfSensors;
+  int         line        = yBegin;
 
+  Serial.println("displayBackground() begin"); 
+  
   #ifdef DRYRUN
     tft.fillRect(xBegin, yBegin, 4, 4, WHITE);  // Oben Links
     tft.fillRect(xBegin, tft.height()-4, 4, 4, WHITE); // Unten Links
     tft.fillRect(tft.width()-4, yBegin, 4, 4, WHITE); // Oben Rechts
     tft.fillRect(tft.width()-4, tft.height()-4, 4, 4, WHITE); // Unten Rechts
-  
+  #endif
+
+  // Wenn keine Sensoren erkannt wurden, brich ab
+  if (numberOfSensors <= 0) {
+  Serial.println("  Keine Sensoren vorhanden, breche ab"); 
+  Serial.println("displayBackground() end"); 
+    return;
+  }
+
+  tft.clearScreen();
+
+  // Beschriftungen
+  tft.setTextSize(1);
   for (int i = 0; i <= numberOfSensors; i++) {
     tft.setCursor(xBegin, line);
-    tft.println(sensorList[i].name);
+
+    // Wenn ein Name gesetzt ist,
+    if (!sensorList[i].name[0] == '\0') {
+      // Nimm den
+      tft.println(sensorList[i].name);
+    } else {
+      // Sonst die Adresse
+      tft.println(sensorList[i].address);
+    }
     line = line + lineheight;
   }
-  #endif
-  
+  tft.setCursor(xBegin, yBegin);
+  Serial.println("displayBackground() end"); 
 }
 
-
 void displayValues() {
-  SensorName  name;
   char        buffer[10];
-
+  int         height      = tft.height() - yBegin;
+  int         lineheight  = height / numberOfSensors;
+  int         line        = yBegin;
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < displayLast + (displayInterval * 1000)) {
     return;
@@ -1250,33 +1275,33 @@ void displayValues() {
  
   Serial.println("displayValues() begin"); 
 
+  // Falls wir vor displayBackground() aufgerufen wurden, hol den Aufruf nach
   if (!initalClear) {
     displayBackground();
     initalClear = true;
   }
-  tft.fillRect(xBegin, yBegin, 128, 20, 0x0000);
-  tft.setCursor(xBegin, yBegin);
 
   // Fehlermeldung, wenn keine Sensoren gefunden wurden
   if (numberOfSensors <= 0) {
     Serial.println("  Keine Sensoren gefunden, deren Daten angezeigt werden könnten"); 
+    Serial.println("displayValues() end"); 
+    return;
   }
+
+  tft.setTextSize(2);
 
   // Iteriere durch alle Sensoren
   for (int i = 0; i < numberOfSensors; i++) {
-    // und wenn ein Name gesetzt ist,
-    if (!sensorList[i].name[0] == '\0') {
-      // Nimm den
-      strcpy(name, sensorList[i].name);
+    if (numberOfSensors <= 4) {
+      tft.setCursor(40, line+10);
     } else {
-      // Sonst die Adresse
-      strcpy(name, sensorList[i].address);
+      tft.setCursor(70, line);
     }
+
     // Formattiere den Wert entspr. dem Value String
     sensorValueToDisplay(sensorList[i].value, sensorList[i].format, sensorList[i].precision, sensorList[i].min, sensorList[i].max, buffer);
-    tft.print(name);
-    tft.print(": ");
     tft.println(buffer);
+    line = line + lineheight;
   }
 
   Serial.println("displayValues() end"); 
@@ -1294,7 +1319,6 @@ boolean getButtonState() {
     return false;
   }
 }
-
 
 void reset() {
   Serial.println("reset() begin");
