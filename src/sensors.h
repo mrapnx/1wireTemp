@@ -8,23 +8,56 @@ typedef char  SensorValueFormat[11];
 typedef int   SensorValuePrecision;
 typedef float SensorValueMin;
 typedef float SensorValueMax;
+typedef float SensorValueFormatMin;
+typedef float SensorValueFormatMax;
 
 struct SensorData {
-  SensorAddress         address    = "";
-  DeviceAddress         deviceAddress;
-  SensorType            type       = '.';
-  SensorName            name       = "";
-  SensorValueFormat     format     = "%s";
-  SensorValuePrecision  precision  = 0;
-  SensorValueMin        min        = -1;
-  SensorValueMax        max        = -1;
+  SensorAddress         address    = "";    // Adresse des Sensors userfriendly
+  DeviceAddress         deviceAddress;      // Adresse des Sensors als HEX
+  SensorType            type       = '.';   // Typ, derzeit werden nur t, b und u unterstützt
+  SensorName            name       = "";    // Name zur Anzeige
+  SensorValueFormat     format     = "%s";  // Format-String zur Darstellung des Wertes
+  SensorValueFormatMin  formatMin  = -1;    // Minimum des Anzeige-Wertes
+  SensorValueFormatMax  formatMax  = -1;    // Maximum des Anzeige-Wertes
+  SensorValuePrecision  precision  = 0;     // Dezimalstellen des Wertes
+  SensorValueMin        min        = -1;    // Minimum des Messwertes 
+  SensorValueMax        max        = -1;    // Minimum des Messwertes
   float                 value;
 };
+
+/* 
+    Die Logik zur Anzeige ist wie folgt: 
+
+    * Direkt Anzeige
+    Der Wert des Sensors wird ermittelt und steht in => value (z.B.  1,5)
+    Der Wert kann nun direkt ausgegeben werden (Standard).
+    Beispiel
+    format ="%s C" / precision = 1  (Implizit: formatMin = -1 / formatMax = -1 / min = -1 / max = -1)
+    Bei einem Messwert von 1,5 wird 1,5 C angezeigt.
+
+    * Prozent-Anzeige
+    Der Wert kann aber auch in ein Verhältnis gesetzt werden, wenn sich z.B. der Messbereich von 0 bis 3 erstreckt, entspräche 1,5 50%.
+    Beispiel:
+    Wir messen 0 bis 3 und zeigen das als prozentualen Level an.
+    min = 0 / max = 3 / format = "%s %%"   (Implizit: formatMin = -1 / formatMax = -1 / precision = 0)
+    Bei value = 1,5 wird dann "50 %" angezeigt (Das doppelte "%%"" führt zur Darstellung von "%").
+    
+   * Anteilige Anzeige
+   Haben wir nun z.B. einen Wassertank, der 120l fasst, können wir auch vom Prozent-Wert auf den anteiligen Wert umrechnen lassen.
+   Beispiel:
+   Wir messen 0 bis 3 und wollen das als Füllstand von 0 bis 120 l anzeigen.
+   min = 0 / max = 3 / formatMin = 0 / fformatMax = 120 / format = "%s l"   (Implizit: precision = 0)
+   Bei einem Messwert von 1,5 wird nun "60 l" angezeigt
+
+*/
+
 
 struct SensorConfig {
   SensorAddress         address   = "";
   SensorName            name      = "";
   SensorValueFormat     format    = "%s";
+  SensorValueFormatMin  formatMin  = -1;
+  SensorValueFormatMax  formatMax  = -1;
   SensorValuePrecision  precision = 0;
   SensorValueMin        min       = -1;
   SensorValueMax        max       = -1;
@@ -40,10 +73,10 @@ const char* deviceAddressToChar(DeviceAddress addr);
 bool strToDeviceAddress(const String &str, DeviceAddress &addr);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType);
 void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
-void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]);
+void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]);
 
 // ***************  Funktionen
-void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]) {
+void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]) {
   char stringBuffer[30] = "";
   float calcedValue = -1;
   Serial.println("sensorValueToDisplay() begin");
@@ -51,13 +84,18 @@ void sensorValueToDisplay(const float sensorValue, const SensorValueFormat forma
   // Wenn min oder max nicht gesetzt sind
   if (min < 0 || max < 0) {
     // Erfolgt keine Umrechnung, sondern die Übernahme des float Wertes
-    Serial.println("  Keine Umrechnung");
+    Serial.println("  Keine Umrechnung, direkte Anzeige");
     calcedValue = sensorValue;
   } else {
     // Plausi-Prüfung
     if (sensorValue >= min && sensorValue <= max && max > min) {
-      Serial.println("  Umrechnung");
-      calcedValue = (sensorValue - min) / (max - min) * 100;
+      if (formatMin < 0 || formatMax < 0) {
+        Serial.println("  Umrechnung in Prozentwert");
+        calcedValue = (sensorValue - min) / (max - min) * 100;
+      } else {
+        Serial.println("  Umrechnung in anteiligen Wert");
+        calcedValue = ((formatMax - formatMin) * (sensorValue - min) / (max - min)) + formatMin;
+      }
     } else {
       Serial.println("  Umrechnung nicht möglich");
       calcedValue = sensorValue;

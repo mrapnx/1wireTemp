@@ -12,7 +12,7 @@
 #include "sensors.h"
 #include "wifi.h"
 
-// #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
+#define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
 
 
 // *************** Konfig-Grundeinstellungen
@@ -124,7 +124,7 @@ void printConfig(Config &pconfig);
 void copyConfig(const Config &from, Config &to);
 
 // Sensorlisten-Methoden
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value);
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
 void clearSensorList();
@@ -133,6 +133,8 @@ void getSensorValueFormat(const SensorAddress address, SensorValueFormat format)
 SensorValueMin getSensorValueMin(const SensorAddress address);
 SensorValueMax getSensorValueMax(const SensorAddress address);
 SensorValuePrecision getSensorValuePrecision(const SensorAddress address);
+SensorValueFormatMin getSensorValueFormatMin(const SensorAddress address);
+SensorValueFormatMax getSensorValueFormatMax(const SensorAddress address);
 boolean getSensorType(const SensorAddress address, SensorType& type);
 char* getSensorDisplayValue(const SensorAddress address);
 
@@ -349,7 +351,7 @@ boolean loadConfig() {
   Serial.println("loadConfig() begin");
   Serial.println("Lade Konfig");
   // Lies den EEPROM bei Adresse 0 aus
-  EEPROM.get(0, tempConfig);
+  EEPROM.get(0, tempConfig); 
   // Die Struct enthält als erstes immer den C-String "MRA-b" und als letztes immer "MRA-e". Prüfe darauf.
   if (strcmp(tempConfig.head, "MRAb") == 0 && (strcmp(tempConfig.foot, "MRAe") == 0)) {
     Serial.println("Konfig erfolgreich geladen:");
@@ -419,6 +421,8 @@ void htmlGetConfig() {
     client.print("<td><input type='text' name='sensorAddress"        + String(i) + "' value='" + String(config.sensorConfig[i].address)   + "'></td>");  
     client.print("<td><input type='text' name='sensorName"           + String(i) + "' value='" + String(config.sensorConfig[i].name)      + "'></td>");  
     client.print("<td><input type='text' name='sensorValueFormat"    + String(i) + "' value='" + String(config.sensorConfig[i].format)    + "'></td>");  
+    client.print("<td><input type='text' name='sensorValueFormatMin" + String(i) + "' value='" + String(config.sensorConfig[i].formatMin) + "'></td>");  
+    client.print("<td><input type='text' name='sensorValueFormatMax" + String(i) + "' value='" + String(config.sensorConfig[i].formatMax) + "'></td>");  
     client.print("<td><input type='text' name='sensorValuePrecision" + String(i) + "' value='" + String(config.sensorConfig[i].precision) + "'></td>");  
     client.print("<td><input type='text' name='sensorValueMin"       + String(i) + "' value='" + String(config.sensorConfig[i].min)       + "'></td>");  
     client.print("<td><input type='text' name='sensorValueMax"       + String(i) + "' value='" + String(config.sensorConfig[i].max)       + "'></td>");  
@@ -486,6 +490,14 @@ void htmlSetConfig() {
     strcpy(name, "sensorValueFormat");
     strcat(name, no);
     strcpy(config.sensorConfig[i].format, getValue(body, name));
+
+    strcpy(name, "sensorValueFormatMin");
+    strcat(name, no);
+    config.sensorConfig[i].formatMin = atof(getValue(body, name)); // Umwandlung nach Float
+
+    strcpy(name, "sensorValueFormatMax");
+    strcat(name, no);
+    config.sensorConfig[i].formatMax = atof(getValue(body, name)); // Umwandlung nach Float
 
     strcpy(name, "sensorValuePrecision");
     strcat(name, no);
@@ -636,7 +648,7 @@ void printSensors() {
   }
 }
 
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value) {
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value) {
   SensorData*   tempArray = (SensorData*)malloc((numberOfSensors + 1) * sizeof(SensorData));
   DeviceAddress tempDs2438DeviceAddress;
 
@@ -655,6 +667,8 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   strcpy(tempArray[numberOfSensors].name, name);
   tempArray[numberOfSensors].type = type;
   strcpy(tempArray[numberOfSensors].format, format);
+  tempArray[numberOfSensors].formatMin = formatMin;
+  tempArray[numberOfSensors].formatMax = formatMax;
   tempArray[numberOfSensors].min = min;
   tempArray[numberOfSensors].max = max;
   tempArray[numberOfSensors].precision = precision;
@@ -728,6 +742,43 @@ SensorValuePrecision getSensorValuePrecision(const SensorAddress address) {
       Serial.print("getSensorValuePrecision(): Sensor gefunden: Adresse=");
       Serial.print(address);
       Serial.print(" precision=");
+      Serial.println(result);
+      break;
+    }
+  }
+  return result;
+}
+
+SensorValueFormatMax getSensorValueFormatMax(const SensorAddress address) {
+  float result = 0;
+  // Tacker durch das sensorConfig Array in config durch
+  for (int i = 0; i < sensorConfigCount; i++) {
+    // Vergleich die Adresse aus dem Parameter mit der in der Config
+    if (strcmp(address, config.sensorConfig[i].address) == 0) {
+      // Und gib bei Übereinstimmung den Min-Wert zurück
+      result = config.sensorConfig[i].formatMax;
+      Serial.print("getSensorValueFormatMax(): Sensor gefunden: Adresse=");
+      Serial.print(address);
+      Serial.print(" formatMax=");
+      Serial.println(result);
+      break;
+    }
+  }
+  return result;
+}
+
+
+SensorValueFormatMin getSensorValueFormatMin(const SensorAddress address) {
+  float result = 0;
+  // Tacker durch das sensorConfig Array in config durch
+  for (int i = 0; i < sensorConfigCount; i++) {
+    // Vergleich die Adresse aus dem Parameter mit der in der Config
+    if (strcmp(address, config.sensorConfig[i].address) == 0) {
+      // Und gib bei Übereinstimmung den Min-Wert zurück
+      result = config.sensorConfig[i].formatMin;
+      Serial.print("getSensorValueFormatMin(): Sensor gefunden: Adresse=");
+      Serial.print(address);
+      Serial.print(" formatMin=");
       Serial.println(result);
       break;
     }
@@ -999,7 +1050,7 @@ void setup1Wire() {
     Serial.print("  Typ Sensor " + String(i) + ": ");
     Serial.println(typeC);
 
-    addSensor(addressC, nameC, typeC, format, getSensorValuePrecision(addressC), getSensorValueMin(addressC), getSensorValueMax(addressC), 0);
+    addSensor(addressC, nameC, typeC, format, getSensorValueFormatMin(addressC), getSensorValueFormatMax(addressC), getSensorValuePrecision(addressC), getSensorValueMin(addressC), getSensorValueMax(addressC), 0);
   }  
 
   #ifdef DRYRUN
@@ -1007,10 +1058,10 @@ void setup1Wire() {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
       tft.println("Dryrun, erzeuge Dummy-Geraete");
       dummySensors = true;
-      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", 0, -1, -1, 23);
-      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", 0, -1, -1, 40);
-      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 0, 100, 25);
-      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 0, 2, 1.5);
+      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1, 23);
+      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1, 40);
+      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 120, 0,  0, 100, 25);
+      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 100, 0,  0,   2, 1.5);
     }
   #endif
 
@@ -1038,7 +1089,7 @@ String getValuesAsHtml() {
       strcpy(name, sensorList[i].address);
     }
     // Formattiere den Wert entspr. dem Value String
-    sensorValueToDisplay(sensorList[i].value, sensorList[i].format, sensorList[i].precision, sensorList[i].min, sensorList[i].max, buffer);
+    sensorValueToDisplay(sensorList[i].value, sensorList[i].format, sensorList[i].formatMin, sensorList[i].formatMax, sensorList[i].precision, sensorList[i].min, sensorList[i].max, buffer);
     returnString = returnString + String(name) + ": " + String(buffer) + "</br>";
 
     Serial.println("  Ermittle Inhalt für Webserver: " + returnString);
@@ -1299,7 +1350,7 @@ void displayValues() {
     }
 
     // Formattiere den Wert entspr. dem Value String
-    sensorValueToDisplay(sensorList[i].value, sensorList[i].format, sensorList[i].precision, sensorList[i].min, sensorList[i].max, buffer);
+    sensorValueToDisplay(sensorList[i].value, sensorList[i].format, sensorList[i].formatMin, sensorList[i].formatMax, sensorList[i].precision, sensorList[i].min, sensorList[i].max, buffer);
     tft.println(buffer);
     line = line + lineheight;
   }
