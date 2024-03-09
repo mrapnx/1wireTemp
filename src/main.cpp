@@ -192,7 +192,6 @@ char* urlDecode(const char* input) {
   return result;
 }
 
-
 int hexToDec(char c) {
   return (c >= '0' && c <= '9') ? c - '0' : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : 0;
 }
@@ -317,7 +316,6 @@ void printConfig(Config &pconfig) {
   Serial.println("printConfig() end");
 }
 
-
 void clearSensorList() {
   // Befreie den Speicher von sensorList
   free(sensorList);
@@ -342,7 +340,6 @@ void saveConfig() {
   }
   Serial.println("saveConfig() end");
 }
-
 
 boolean loadConfig() {
   Config tempConfig;
@@ -387,7 +384,6 @@ void htmlGetHeader(int refresh) {
   client.print("</head>");
 }
 
-
 void htmlGetConfig() {
   htmlGetHeader(0);
   client.print("<html><body>");
@@ -429,7 +425,6 @@ void htmlGetConfig() {
     client.print("</tr>");  
   }
   client.print("</table>");
-
 
   client.print("<input type='submit' value='Speichern'>");
   client.print("</form>");
