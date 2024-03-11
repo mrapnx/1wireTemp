@@ -1,0 +1,23 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "PlatformIO",
+			"task": "Upload and Monitor (nano_33_iot)",
+			"problemMatcher": [
+				"$platformio"
+			],
+			"group": "build",
+			"label": "PlatformIO: Upload and Monitor (nano_33_iot)"
+		},
+		{
+			"type": "PlatformIO",
+			"task": "Build (nano_33_iot)",
+			"problemMatcher": [
+				"$platformio"
+			],
+			"group": "build",
+			"label": "PlatformIO: Build (nano_33_iot)"
+		}
+	]
+}

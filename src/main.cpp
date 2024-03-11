@@ -10,10 +10,8 @@
 #include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __MRA_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
 #include <DS2438.h>
 #include "sensors.h"
-#include "wifi.h"
 
-#define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
-
+// #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
 
 // *************** Konfig-Grundeinstellungen
 typedef struct {
@@ -939,18 +937,19 @@ void updateLevels() {
           Serial.print(" erfolgreich abgefragt");
           updateSensorValue(sensorList[i].address, ds2438.getVoltage(DS2438_CHA));
         }
+        Serial.print(": Timestamp: ");
+        Serial.print(ds2438.getTimestamp());
+        Serial.print(": Temperatur = ");
+        Serial.print(ds2438.getTemperature(), 1);
+        Serial.print("C, Kanal A = ");
+        Serial.print(ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
+        Serial.print("v, Kanal B = ");
+        Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
+        Serial.println("v.");
       } else {
+        Serial.println(" Dummywert erzeugt");
         updateSensorValue(sensorList[i].address, random(0,2) + (1 / random(1,10)));
       }
-      Serial.print(": Timestamp: ");
-      Serial.print(ds2438.getTimestamp());
-      Serial.print(": Temperatur = ");
-      Serial.print(ds2438.getTemperature(), 1);
-      Serial.print("C, Kanal A = ");
-      Serial.print(ds2438.getVoltage(DS2438_CHA), 1); // Pin 1
-      Serial.print("v, Kanal B = ");
-      Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
-      Serial.println("v.");
       //delete &ds2438;  // MR: Keine Ahnung warum, aber das führt zu nem Freeze
     }
   }
@@ -1053,10 +1052,10 @@ void setup1Wire() {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
       tft.println("Dryrun, erzeuge Dummy-Geraete");
       dummySensors = true;
-      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1, 23);
-      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1, 40);
-      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 120, 0,  0, 100, 25);
-      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 100, 0,  0,   2, 1.5);
+      addSensor("28111111251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1, 23);
+      addSensor("28222222251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1, 40);
+      addSensor("33333333351601", "Dmy Lvl 1", 'b', "%3s l", 0, 120, 0,  0, 100, 25);
+      addSensor("33444444451601", "Dmy Lvl 2", 'b', "%3s %%", 0, 100, 0,  0,   2, 1.5);
     }
   #endif
 
