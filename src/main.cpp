@@ -9,29 +9,39 @@
 #include <FlashStorage_SAMD.h>
 #include <TFT_ILI9163C.h> // Achtung! In der TFT_IL9163C_settings.h muss >> #define __MRA_PCB__ << aktiv sein!. Offenbar ist mein Board nicht von dem Bug betroffen, von dem andere rote Boards betroffen sind. Siehe Readme der TFT_IL9163 Lib.
 #include <DS2438.h>
+#include <Arduino_LSM6DS3.h>
 #include "sensors.h"
 #include "wifi.h"
 
 #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
 
+typedef struct {
+  boolean active  = false;
+  float   x       = 0;
+  float   y       = 0;
+  float   z       = 0;
+} Imu;
 
 // *************** Konfig-Grundeinstellungen
 typedef struct {
   char    head           [5] = "MRAb";
   // WLAN
-  boolean wifiActive         = true;
+  boolean wifiEnabled        = true;
   char    wifiMode           = 'a'; // a = Access Point / c = Client
   int     wifiTimeout        = 10;
   char    wifiSsid      [21] = "ArduinoAP";
   char    wifiPass      [21] = "ArduinoAP";
 
   // MQTT-Zugangsdaten
-  boolean mqttActive         = false;
+  boolean mqttEnabled        = false;
   char    mqttServer    [21] = "127.0.0.1"; // war: char *mqttServer
   int     mqttPort           = 1883;
   char    mqttName      [21] = "ArduinoClient";
   char    mqttUser      [21] = "ArudinoNano";
   char    mqttPassword  [21] = "DEIN_MQTT_PASSWORT";
+
+  // IMU
+  boolean imuEnabled         = true;
   
   // Sensor-Konfiguration
   SensorConfig sensorConfig[sensorConfigCount];  
@@ -46,7 +56,7 @@ const int wifiPort = 80; // Port, auf den der HTTP-Server lauscht
 #define RST_PIN  21   // D21
 
 // Button Pin
-#define BUTTON_PIN 18 // D18
+#define BUTTON_PIN 17 // D17 // Achtung: Ist aktuell noch auf D18 gelötet, der wird aber von der IMU belegt
 
 // Display
 #define TFT_LED  2    // Rot    LED   D2 +3.3V
@@ -86,12 +96,19 @@ unsigned long blinkLast       = 0;
 boolean       blinking        = false;
 boolean       buttonState     = false;
 boolean       dummySensors    = false;
+boolean       imuActive       = false;
+
+// MR: IMU Test
+float dx, dy, dz = 0;
 
 // 1-Wire
 SensorData*       sensorList = nullptr;       // Zeiger auf das Array von SensorData
 int               numberOfSensors = 0;        // Aktuelle Anzahl von Sensoren
 OneWire           oneWire(PinOneWireBus);     // 1-Wire Grundobjekt
 DallasTemperature sensors(&oneWire);          // 1-Wire Objekt für Temperatursensoren
+
+// IMU
+Imu imu;
 
 // Webserver
 IPAddress   ip; 
@@ -161,11 +178,15 @@ void htmlGetConfig();
 void htmlSetConfig();
 void httpProcessRequests();
 
+// IMU-Methoden
+void getImu();
+
 //  Setup-Methoden
 void setup1Wire(); 
 void setupDisplay();
 void setupMemory();
 void setupWifi();
+void setupImu();
 void setup();
 
 // ***************  Funktionen
@@ -234,14 +255,14 @@ char* getValue(const String& data, const char* key) {
 void copyConfig(const Config &from, Config &to) {
   Serial.println("copyConfig() begin");
   // WiFi
-         to.wifiActive   = from.wifiActive;
+         to.wifiEnabled  = from.wifiEnabled;
          to.wifiMode     = from.wifiMode;
          to.wifiTimeout  = from.wifiTimeout;
   strcpy(to.wifiSsid,      from.wifiSsid);
   strcpy(to.wifiPass,      from.wifiPass);
 
   // MQTT
-         to.mqttActive   = from.mqttActive;
+         to.mqttEnabled  = from.mqttEnabled;
   strcpy(to.mqttServer,    from.mqttServer);
   strcpy(to.mqttUser,      from.mqttUser);
          to.mqttPort     = from.mqttPort;
@@ -263,8 +284,8 @@ void copyConfig(const Config &from, Config &to) {
 void printConfig(Config &pconfig) {
   Serial.println("printConfig() begin");
 
-  Serial.print("wifiActive: ");
-  Serial.println(int(pconfig.wifiActive));
+  Serial.print("wifiEnabled: ");
+  Serial.println(int(pconfig.wifiEnabled));
 
   Serial.print("ssid: ");
   Serial.println(pconfig.wifiSsid);
@@ -278,8 +299,8 @@ void printConfig(Config &pconfig) {
   Serial.print("wifiTimeout: ");
   Serial.println(pconfig.wifiTimeout);
 
-  Serial.print("mqttActive: ");
-  Serial.println(int(pconfig.mqttActive));
+  Serial.print("mqttEnabled: ");
+  Serial.println(int(pconfig.mqttEnabled));
 
   Serial.print("mqttServer: ");
   Serial.println(pconfig.mqttServer);
@@ -389,13 +410,13 @@ void htmlGetConfig() {
   client.print("<html><body>");
   client.print("<h1>Konfiguration</h1>");
   client.print("<form method='get' action='/update'>");
-  client.print("<p>WLAN aktiv: <input type='checkbox' name='wifiActive' " + String(config.wifiActive ? "checked" : "") + "></p>");
+  client.print("<p>WLAN aktiv: <input type='checkbox' name='wifiEnabled' " + String(config.wifiEnabled ? "checked" : "") + "></p>");
   client.print("<p>SSID: <input type='text' name='wifiSsid' value='" + String(config.wifiSsid) + "'></p>");
   client.print("<p>Passwort: <input type='text' name='wifiPass' value='" + String(config.wifiPass) + "'></p>");
   client.print("<p>Modus (a=Access Point, c=Client): <input type='text' name='wifiMode' value='" + String(config.wifiMode) + "'></p>");
   client.print("<p>WLAN Timeout: <input type='text' name='wifiTimeout' value='" + String(config.wifiTimeout) + "'></p>");
 
-  client.print("<p>MQTT aktiv: <input type='checkbox' name='mqttActive' " + String(config.mqttActive ? "checked" : "") + "></p>");
+  client.print("<p>MQTT aktiv: <input type='checkbox' name='mqttEnabled' " + String(config.mqttEnabled ? "checked" : "") + "></p>");
   client.print("<p>MQTT Server: <input type='text' name='mqttServer' value='" + String(config.mqttServer) + "'></p>");
   client.print("<p>MQTT Port: <input type='text' name='mqttPort' value='" + String(config.mqttPort) + "'></p>");
   client.print("<p>MQTT Name: <input type='text' name='mqttName' value='" + String(config.mqttName) + "'></p>");
@@ -455,14 +476,14 @@ void htmlSetConfig() {
   Serial.println(body);
 
   // Extrahiere die aktualisierten Werte aus dem HTTP-Body
-  config.wifiActive = body.indexOf("wifiActive=on") != -1;
+  config.wifiEnabled = body.indexOf("wifiEnabled=on") != -1;
 
   strcpy(config.wifiSsid, getValue(body, "wifiSsid"));
   strcpy(config.wifiPass, getValue(body, "wifiPass"));
   config.wifiMode = getValue(body, "wifiMode")[0];
   config.wifiTimeout = atoi(getValue(body, "wifiTimeout")); // Umwandlung in Integer
 
-  config.mqttActive = body.indexOf("mqttActive=on") != -1;
+  config.mqttEnabled = body.indexOf("mqttEnabled=on") != -1;
   strcpy(config.mqttServer, getValue(body, "mqttServer"));
   Serial.print("mqttServer: ");
   Serial.println(config.mqttServer);
@@ -1109,6 +1130,9 @@ void setup() {
   setupMemory();
   loadConfig(); // Achtung! Schlägt direkt nach dem Upload fehl
 
+  // IMU
+  setupImu();
+
   // Display
   setupDisplay();
 
@@ -1153,7 +1177,7 @@ void printWiFiStatus() {
 
 boolean checkWiFi() {
   // Prüfe, ob WiFi überhaupt aktiviert tist
-  if (!config.wifiActive) {
+  if (!config.wifiEnabled) {
     return true;
   }
   // Ermittle den Zeitpunkt, bis zu dem der Verbindungsversuch dauern darf
@@ -1224,8 +1248,28 @@ void setupMemory() {
   Serial.println("setupMemory() end");
 }
 
+void setupImu() {
+  Serial.println("setupImu() begin");
+  if (config.imuEnabled) {
+    Serial.println("  Initialisiere IMU");
+    if (IMU.begin()) {
+      Serial.println("  IMU initialisiert");
+      imuActive = true;
+      if (IMU.gyroscopeAvailable()) {
+        IMU.readGyroscope(dx, dy, dz);
+      }
+    } else {
+      Serial.println("  IMU konnte nicht initialisiert werden"); 
+    }
+  } else {
+    Serial.println("  IMU nicht aktiviert");
+  }
+  Serial.println("setupImu() end");
+}
+
+
 void setupWifi() {
-  if (!config.wifiActive) {
+  if (!config.wifiEnabled) {
     return;
   }
   Serial.println("setupWifi() begin");
@@ -1243,7 +1287,7 @@ void setupWifi() {
 
 boolean connectToMQTT() {
   // Prüfe, ob MQTT überhaupt aktivier tist
-  if (!config.mqttActive) {
+  if (!config.mqttEnabled) {
     return true;
   }
 
@@ -1353,6 +1397,40 @@ void displayValues() {
   Serial.println("displayValues() end"); 
 }
 
+void getImu() {
+  float x, y, z;
+
+  if (IMU.gyroscopeAvailable()) {
+    IMU.readGyroscope(imu.x, imu.y, imu.z);
+    imu.x = imu.x - dx;
+    imu.y = imu.y - dy;
+    imu.z = imu.z - dz;
+
+    IMU.readAcceleration(x, y, z);
+    tft.setCursor(0, yBegin);
+    tft.println("Gyro:");
+    tft.print("x: ");
+    tft.print(imu.x);
+    tft.println("     ");
+    tft.print("y: ");
+    tft.print(imu.y);
+    tft.println("     ");
+    tft.print("z: ");
+    tft.print(imu.z);
+    tft.println("     ");
+    tft.println("Acc:");
+    tft.print("x: ");
+    tft.print(x);
+    tft.println("     ");
+    tft.print("y: ");
+    tft.print(y);
+    tft.println("     ");
+    tft.print("z: ");
+    tft.print(z);
+    tft.println("     ");
+   } 
+}
+
 boolean getButtonState() {
   boolean newState;
   newState = digitalRead(BUTTON_PIN);
@@ -1379,7 +1457,7 @@ void sendTemperaturesToMQTT() {
   char payload[10];
 
   // Prüfe, ob WiFi überhaupt aktivier tist
-  if (!config.mqttActive) {
+  if (!config.mqttEnabled) {
     return;
   }
 
@@ -1455,18 +1533,20 @@ void printSensorAddresses() {
 
 void loop() {
   blink();
-
+ 
   getButtonState();
 
-  checkWiFi();
+  getImu();
 
-  updateTemperatures();
-  updateLevels();
+  //checkWiFi();
 
-  displayValues(); 
+  //updateTemperatures();
+  //updateLevels();
 
-  sendTemperaturesToMQTT();
+  //displayValues(); 
 
-  httpProcessRequests();
+  //sendTemperaturesToMQTT();
+
+  //httpProcessRequests();
 
 }
