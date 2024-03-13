@@ -14,12 +14,22 @@
 #include "wifi.h"
 
 #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
+#define IMU_TEST
 
 typedef struct {
-  boolean active  = false;
   float   x       = 0;
   float   y       = 0;
   float   z       = 0;
+} Axis;
+
+typedef struct {
+  boolean active   = false;
+  Axis    gyro;
+  Axis    accel;
+  Axis    orient;     // z wird nicht befüllt, da es keinen Magnetometer gibt
+  #ifdef IMU_TEST
+    boolean leveled  = false;
+  #endif
 } Imu;
 
 // *************** Konfig-Grundeinstellungen
@@ -42,6 +52,7 @@ typedef struct {
 
   // IMU
   boolean imuEnabled         = true;
+  Axis    orientDif;
   
   // Sensor-Konfiguration
   SensorConfig sensorConfig[sensorConfigCount];  
@@ -97,9 +108,6 @@ boolean       blinking        = false;
 boolean       buttonState     = false;
 boolean       dummySensors    = false;
 boolean       imuActive       = false;
-
-// MR: IMU Test
-float dx, dy, dz = 0;
 
 // 1-Wire
 SensorData*       sensorList = nullptr;       // Zeiger auf das Array von SensorData
@@ -179,6 +187,7 @@ void htmlSetConfig();
 void httpProcessRequests();
 
 // IMU-Methoden
+void levelOrientation();
 void getImu();
 
 //  Setup-Methoden
@@ -351,12 +360,12 @@ void clearSensorList() {
 void saveConfig() {
   Serial.println("saveConfig() begin");
 
-  Serial.println("Speichere Konfig:");
+  Serial.println("  Speichere Konfig:");
   printConfig(config);
   EEPROM.put(0, config);
 
   if (!EEPROM.getCommitASAP()) {
-    Serial.println("CommitASAP nicht gesetzt, führe commit() aus.");
+    Serial.println("  CommitASAP nicht gesetzt, führe commit() aus.");
     EEPROM.commit();
   }
   Serial.println("saveConfig() end");
@@ -367,17 +376,17 @@ boolean loadConfig() {
   boolean returnValue = false;
 
   Serial.println("loadConfig() begin");
-  Serial.println("Lade Konfig");
+  Serial.println("  Lade Konfig");
   // Lies den EEPROM bei Adresse 0 aus
   EEPROM.get(0, tempConfig); 
   // Die Struct enthält als erstes immer den C-String "MRA-b" und als letztes immer "MRA-e". Prüfe darauf.
   if (strcmp(tempConfig.head, "MRAb") == 0 && (strcmp(tempConfig.foot, "MRAe") == 0)) {
-    Serial.println("Konfig erfolgreich geladen:");
+    Serial.println("  Konfig erfolgreich geladen:");
     copyConfig(tempConfig, config);
     printConfig(config);
     returnValue = true;
   } else {
-    Serial.println("Konfig konnte nicht geladen werden, habe folgendes erhalten:");
+    Serial.println("  Konfig konnte nicht geladen werden, habe folgendes erhalten:");
     printConfig(tempConfig);
     returnValue = false;
   }
@@ -407,58 +416,73 @@ void htmlGetHeader(int refresh) {
 
 void htmlGetConfig() {
   htmlGetHeader(0);
-  client.print("<html><body>");
-  client.print("<h1>Konfiguration</h1>");
-  client.print("<form method='get' action='/update'>");
-  client.print("<p>WLAN aktiv: <input type='checkbox' name='wifiEnabled' " + String(config.wifiEnabled ? "checked" : "") + "></p>");
-  client.print("<p>SSID: <input type='text' name='wifiSsid' value='" + String(config.wifiSsid) + "'></p>");
-  client.print("<p>Passwort: <input type='text' name='wifiPass' value='" + String(config.wifiPass) + "'></p>");
-  client.print("<p>Modus (a=Access Point, c=Client): <input type='text' name='wifiMode' value='" + String(config.wifiMode) + "'></p>");
-  client.print("<p>WLAN Timeout: <input type='text' name='wifiTimeout' value='" + String(config.wifiTimeout) + "'></p>");
+  client.print("<html>");
+  client.print("  <body>");
+  client.print("    <h1>Konfiguration</h1>");
+  client.print("    <form method='get' action='/update'>");
+  client.print("      <p>WLAN aktiv: <input type='checkbox' name='wifiEnabled' " + String(config.wifiEnabled ? "checked" : "") + "></p>");
+  client.print("      <p>SSID: <input type='text' name='wifiSsid' value='" + String(config.wifiSsid) + "'></p>");
+  client.print("      <p>Passwort: <input type='text' name='wifiPass' value='" + String(config.wifiPass) + "'></p>");
+  client.print("      <p>Modus (a=Access Point, c=Client): <input type='text' name='wifiMode' value='" + String(config.wifiMode) + "'></p>");
+  client.print("      <p>WLAN Timeout: <input type='text' name='wifiTimeout' value='" + String(config.wifiTimeout) + "'></p>");
 
-  client.print("<p>MQTT aktiv: <input type='checkbox' name='mqttEnabled' " + String(config.mqttEnabled ? "checked" : "") + "></p>");
-  client.print("<p>MQTT Server: <input type='text' name='mqttServer' value='" + String(config.mqttServer) + "'></p>");
-  client.print("<p>MQTT Port: <input type='text' name='mqttPort' value='" + String(config.mqttPort) + "'></p>");
-  client.print("<p>MQTT Name: <input type='text' name='mqttName' value='" + String(config.mqttName) + "'></p>");
-  client.print("<p>MQTT Benutzer: <input type='text' name='mqttUser' value='" + String(config.mqttUser) + "'></p>");
-  client.print("<p>MQTT Passwort: <input type='text' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
+  client.print("      <p>MQTT aktiv: <input type='checkbox' name='mqttEnabled' " + String(config.mqttEnabled ? "checked" : "") + "></p>");
+  client.print("      <p>MQTT Server: <input type='text' name='mqttServer' value='" + String(config.mqttServer) + "'></p>");
+  client.print("      <p>MQTT Port: <input type='text' name='mqttPort' value='" + String(config.mqttPort) + "'></p>");
+  client.print("      <p>MQTT Name: <input type='text' name='mqttName' value='" + String(config.mqttName) + "'></p>");
+  client.print("      <p>MQTT Benutzer: <input type='text' name='mqttUser' value='" + String(config.mqttUser) + "'></p>");
+  client.print("      <p>MQTT Passwort: <input type='text' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
 
-  client.print("<p/>");
-  client.print("<table>");
-  client.print("<th></th>");
-  client.print("<th>Adresse</th>");
-  client.print("<th>Name</th>");
-  client.print("<th>Format</th>");
-  client.print("<th>Dezimalstellen</th>");
-  client.print("<th>Min</th>");
-  client.print("<th>Max</th>");
+  client.print("      <p/>");
+  client.print("      <p>IMU aktiviert: <input type='checkbox' name='imuEnabled' " + String(config.imuEnabled ? "checked" : "") + "></p>");
+  client.print("      <table>");
+  client.print("        <tr>");
+  client.print("          <td>X: <input type='text' name='orientDif.x' value='" + String(config.orientDif.x) + "'></td>");
+  client.print("          <td>Y: <input type='text' name='orientDif.y' value='" + String(config.orientDif.y) + "'></td>");
+  client.print("          <td>Z: <input type='text' name='orientDif.z' value='" + String(config.orientDif.z) + "'></td>");
+  client.print("        </tr>");
+  client.print("      </table>");
+
+  client.print("      <p/>");
+  client.print("      <table>");
+  client.print("        <th></th>");
+  client.print("        <th>Adresse</th>");
+  client.print("        <th>Name</th>");
+  client.print("        <th>Format</th>");
+  client.print("        <th>Dezimalstellen</th>");
+  client.print("        <th>Min</th>");
+  client.print("        <th>Max</th>");
   for (int i = 0; i < sensorConfigCount; i++) {
-    client.print("<tr>");  
-    client.print("<td>" + String(i) + "</td>");  
-    client.print("<td><input type='text' name='sensorAddress"        + String(i) + "' value='" + String(config.sensorConfig[i].address)   + "'></td>");  
-    client.print("<td><input type='text' name='sensorName"           + String(i) + "' value='" + String(config.sensorConfig[i].name)      + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueFormat"    + String(i) + "' value='" + String(config.sensorConfig[i].format)    + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueFormatMin" + String(i) + "' value='" + String(config.sensorConfig[i].formatMin) + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueFormatMax" + String(i) + "' value='" + String(config.sensorConfig[i].formatMax) + "'></td>");  
-    client.print("<td><input type='text' name='sensorValuePrecision" + String(i) + "' value='" + String(config.sensorConfig[i].precision) + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueMin"       + String(i) + "' value='" + String(config.sensorConfig[i].min)       + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueMax"       + String(i) + "' value='" + String(config.sensorConfig[i].max)       + "'></td>");  
-    client.print("</tr>");  
+    client.print("        <tr>");  
+    client.print("          <td>" + String(i) + "</td>");  
+    client.print("          <td><input type='text' name='sensorAddress"        + String(i) + "' value='" + String(config.sensorConfig[i].address)   + "'></td>");  
+    client.print("          <td><input type='text' name='sensorName"           + String(i) + "' value='" + String(config.sensorConfig[i].name)      + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueFormat"    + String(i) + "' value='" + String(config.sensorConfig[i].format)    + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueFormatMin" + String(i) + "' value='" + String(config.sensorConfig[i].formatMin) + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueFormatMax" + String(i) + "' value='" + String(config.sensorConfig[i].formatMax) + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValuePrecision" + String(i) + "' value='" + String(config.sensorConfig[i].precision) + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueMin"       + String(i) + "' value='" + String(config.sensorConfig[i].min)       + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueMax"       + String(i) + "' value='" + String(config.sensorConfig[i].max)       + "'></td>");  
+    client.print("        </tr>");  
   }
-  client.print("</table>");
+  client.print("      </table>");
 
-  client.print("<input type='submit' value='Speichern'>");
-  client.print("</form>");
-  client.print("<br/>");
-  client.print("<br/>");
-  client.print("<a href=\"/reboot\">Neustart</a>"); 
-  client.print("<br/>");
-  client.print("<br/>");
-  client.print("<a href=\"/\">Zur&uuml;ck</a>");
-  client.print("<br/>");
-  client.print("<br/>");
-  client.print("<a href=\"load\">Konfig laden</a>");
-  client.print("</body></html>");
+  client.print("      <input type='submit' value='Speichern'>");
+  client.print("    </form>");
+  client.print("    <br/>");
+  client.print("    <br/>");
+  client.print("    <a href=\"/reboot\">Neustart</a>"); 
+  client.print("    <br/>");
+  client.print("    <br/>");
+  client.print("    <a href=\"/level\">Ausrichtung leveln</a>"); 
+  client.print("    <br/>");
+  client.print("    <br/>");
+  client.print("    <a href=\"/\">Zur&uuml;ck</a>");
+  client.print("    <br/>");
+  client.print("    <br/>");
+  client.print("    <a href=\"load\">Konfig laden</a>");
+  client.print("  </body>");
+  client.print("</html>");
 }
 
 void htmlSetConfig() {
@@ -476,13 +500,15 @@ void htmlSetConfig() {
   Serial.println(body);
 
   // Extrahiere die aktualisierten Werte aus dem HTTP-Body
-  config.wifiEnabled = body.indexOf("wifiEnabled=on") != -1;
 
+  // Wifi
+  config.wifiEnabled = body.indexOf("wifiEnabled=on") != -1;
   strcpy(config.wifiSsid, getValue(body, "wifiSsid"));
   strcpy(config.wifiPass, getValue(body, "wifiPass"));
   config.wifiMode = getValue(body, "wifiMode")[0];
   config.wifiTimeout = atoi(getValue(body, "wifiTimeout")); // Umwandlung in Integer
 
+  // MQTT
   config.mqttEnabled = body.indexOf("mqttEnabled=on") != -1;
   strcpy(config.mqttServer, getValue(body, "mqttServer"));
   Serial.print("mqttServer: ");
@@ -492,6 +518,13 @@ void htmlSetConfig() {
   strcpy(config.mqttUser, getValue(body, "mqttUser"));
   strcpy(config.mqttPassword, getValue(body, "mqttPassword"));
 
+  // IMU
+  config.imuEnabled = body.indexOf("imuEnabled=on") != -1;
+  config.orientDif.x = atof(getValue(body, "orientDif.x")); // Umwandlung nach Float
+  config.orientDif.y = atof(getValue(body, "orientDif.y")); // Umwandlung nach Float
+  config.orientDif.z = atof(getValue(body, "orientDif.z")); // Umwandlung nach Float
+
+  // Sensoren
   for (int i = 0; i < sensorConfigCount; i++) {
     itoa(i, no, 10);
 
@@ -629,6 +662,27 @@ char c;
           htmlGetConfig();
           break;
         }                      
+
+        // "Leveln"
+        if (currentLine.endsWith("GET /level")) {
+          Serial.println("  GET /level => Leveln");
+          levelOrientation();
+          htmlGetHeader(0);
+          client.print("<html><body>");
+          if (loadConfig()) {
+            client.println("Ausrichtung geleveled:<br/>");
+            client.print("x: ");
+            client.print(config.orientDif.x);
+            client.print("y: ");
+            client.println(config.orientDif.y);
+          } else {
+            client.print("Konfig konnte nicht geladen werden<br/><br/>");
+          }          
+          client.print("<br/><br/><a href=\"/\">Zur&uuml;ck</a>");
+          client.print("</body></html>");
+          break;
+
+        }
 
         // "Neustarten"
         if (currentLine.endsWith("GET /reboot")) {
@@ -1132,7 +1186,7 @@ void setup() {
 
   // IMU
   setupImu();
-
+  
   // Display
   setupDisplay();
 
@@ -1140,17 +1194,19 @@ void setup() {
   setupWifi();
   checkWiFi();
 
-  // Verbinde mit dem MQTT-Server
-  connectToMQTT();
+  #ifndef IMU_TEST
+    // Verbinde mit dem MQTT-Server
+    connectToMQTT();
 
-  // Öffne den 1-Wire Bus
-  setup1Wire();
+    // Öffne den 1-Wire Bus
+    setup1Wire();
 
-  // Gib die gefundenen Sensoren seriell aus
-  printSensors();
+    // Gib die gefundenen Sensoren seriell aus
+    printSensors();
 
-  // Erzeuge die Sensor-Beschriftungen
-  displayBackground();
+    // Erzeuge die Sensor-Beschriftungen
+    displayBackground();
+  #endif
 
   Serial.println("setup() end");
 }
@@ -1254,10 +1310,7 @@ void setupImu() {
     Serial.println("  Initialisiere IMU");
     if (IMU.begin()) {
       Serial.println("  IMU initialisiert");
-      imuActive = true;
-      if (IMU.gyroscopeAvailable()) {
-        IMU.readGyroscope(dx, dy, dz);
-      }
+      imu.active = true;
     } else {
       Serial.println("  IMU konnte nicht initialisiert werden"); 
     }
@@ -1280,7 +1333,7 @@ void setupWifi() {
 
   String fv = WiFi.firmwareVersion();
   if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
-    Serial.println("***** Bitte WIFI Firmware aktualisieren! *****");
+    Serial.println("  ***** Bitte WIFI Firmware aktualisieren! *****");
   }
   Serial.println("setupWifi() end");
 }
@@ -1397,38 +1450,49 @@ void displayValues() {
   Serial.println("displayValues() end"); 
 }
 
+void levelOrientation() {
+  config.orientDif.x = imu.orient.x;
+  config.orientDif.y = imu.orient.y;
+  config.orientDif.z = imu.orient.z;
+  #ifdef IMU_TEST
+    imu.leveled   = true;
+  #endif
+}
+
 void getImu() {
-  float x, y, z;
+  if (imu.active) {  
+    if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable() ) {
 
-  if (IMU.gyroscopeAvailable()) {
-    IMU.readGyroscope(imu.x, imu.y, imu.z);
-    imu.x = imu.x - dx;
-    imu.y = imu.y - dy;
-    imu.z = imu.z - dz;
+      // Beschleunigungswerte lesen
+      IMU.readAcceleration(imu.accel.x, imu.accel.y, imu.accel.z);
+      
+      // Gyroskopwerte lesen
+      IMU.readGyroscope(imu.gyro.x, imu.gyro.y, imu.gyro.z);
 
-    IMU.readAcceleration(x, y, z);
-    tft.setCursor(0, yBegin);
-    tft.println("Gyro:");
-    tft.print("x: ");
-    tft.print(imu.x);
-    tft.println("     ");
-    tft.print("y: ");
-    tft.print(imu.y);
-    tft.println("     ");
-    tft.print("z: ");
-    tft.print(imu.z);
-    tft.println("     ");
-    tft.println("Acc:");
-    tft.print("x: ");
-    tft.print(x);
-    tft.println("     ");
-    tft.print("y: ");
-    tft.print(y);
-    tft.println("     ");
-    tft.print("z: ");
-    tft.print(z);
-    tft.println("     ");
-   } 
+      // Roll - Kippen um die Längsachse USB-Port <--> Antenne - Neight man die grüne LED nach hinten, ist der Wert positiv
+      imu.orient.x = (atan2(imu.accel.y, imu.accel.z) * 180 / PI) - config.orientDif.x;
+
+      // Pitch - Neigen über Längsachse USB-Port <--> Antenne - Ist der USB-Port tiefer als die Antenne, ist der Wert positiv
+      imu.orient.y = (atan2(-imu.accel.x, sqrt(imu.accel.y * imu.accel.y + imu.accel.z * imu.accel.z)) * 180 / PI) - config.orientDif.y;
+
+      #ifdef IMU_TEST
+        // (Nur) beim ersten Mal leveln
+        if (!imu.leveled) {
+          levelOrientation();
+        }
+
+        tft.setCursor(0, yBegin);
+        tft.println("Orientation:");
+        tft.print("x: ");
+        tft.print(imu.orient.x);
+        tft.println("     ");
+        tft.print("y: ");
+        tft.print(imu.orient.y);
+        tft.println("     ");
+        tft.println("     ");
+      #endif
+    } 
+  }
 }
 
 boolean getButtonState() {
@@ -1534,19 +1598,20 @@ void printSensorAddresses() {
 void loop() {
   blink();
  
-  getButtonState();
+  #ifdef IMU_TEST
+    getImu();
+  #elif
+    getButtonState();
 
-  getImu();
+    checkWiFi();
 
-  //checkWiFi();
+    updateTemperatures();
+    updateLevels();
 
-  //updateTemperatures();
-  //updateLevels();
+    displayValues(); 
 
-  //displayValues(); 
+    sendTemperaturesToMQTT();
 
-  //sendTemperaturesToMQTT();
-
-  //httpProcessRequests();
-
+    httpProcessRequests();
+  #endif
 }
