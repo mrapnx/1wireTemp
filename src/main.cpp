@@ -17,14 +17,14 @@
 typedef struct {
   char    head           [5] = "MRAb";
   // WLAN
-  boolean wifiActive         = true;
+  boolean wifiEnabled        = true;
   char    wifiMode           = 'a'; // a = Access Point / c = Client
   int     wifiTimeout        = 10;
   char    wifiSsid      [21] = "ArduinoAP";
   char    wifiPass      [21] = "ArduinoAP";
 
   // MQTT-Zugangsdaten
-  boolean mqttActive         = false;
+  boolean mqttEnabled        = false;
   char    mqttServer    [21] = "127.0.0.1"; // war: char *mqttServer
   int     mqttPort           = 1883;
   char    mqttName      [21] = "ArduinoClient";
@@ -232,14 +232,14 @@ char* getValue(const String& data, const char* key) {
 void copyConfig(const Config &from, Config &to) {
   Serial.println("copyConfig() begin");
   // WiFi
-         to.wifiActive   = from.wifiActive;
+         to.wifiEnabled  = from.wifiEnabled;
          to.wifiMode     = from.wifiMode;
          to.wifiTimeout  = from.wifiTimeout;
   strcpy(to.wifiSsid,      from.wifiSsid);
   strcpy(to.wifiPass,      from.wifiPass);
 
   // MQTT
-         to.mqttActive   = from.mqttActive;
+         to.mqttEnabled  = from.mqttEnabled;
   strcpy(to.mqttServer,    from.mqttServer);
   strcpy(to.mqttUser,      from.mqttUser);
          to.mqttPort     = from.mqttPort;
@@ -261,8 +261,8 @@ void copyConfig(const Config &from, Config &to) {
 void printConfig(Config &pconfig) {
   Serial.println("printConfig() begin");
 
-  Serial.print("wifiActive: ");
-  Serial.println(int(pconfig.wifiActive));
+  Serial.print("wifiEnabled: ");
+  Serial.println(int(pconfig.wifiEnabled));
 
   Serial.print("ssid: ");
   Serial.println(pconfig.wifiSsid);
@@ -276,8 +276,8 @@ void printConfig(Config &pconfig) {
   Serial.print("wifiTimeout: ");
   Serial.println(pconfig.wifiTimeout);
 
-  Serial.print("mqttActive: ");
-  Serial.println(int(pconfig.mqttActive));
+  Serial.print("mqttEnabled: ");
+  Serial.println(int(pconfig.mqttEnabled));
 
   Serial.print("mqttServer: ");
   Serial.println(pconfig.mqttServer);
@@ -328,12 +328,12 @@ void clearSensorList() {
 void saveConfig() {
   Serial.println("saveConfig() begin");
 
-  Serial.println("Speichere Konfig:");
+  Serial.println("  Speichere Konfig:");
   printConfig(config);
   EEPROM.put(0, config);
 
   if (!EEPROM.getCommitASAP()) {
-    Serial.println("CommitASAP nicht gesetzt, führe commit() aus.");
+    Serial.println("  CommitASAP nicht gesetzt, führe commit() aus.");
     EEPROM.commit();
   }
   Serial.println("saveConfig() end");
@@ -344,17 +344,17 @@ boolean loadConfig() {
   boolean returnValue = false;
 
   Serial.println("loadConfig() begin");
-  Serial.println("Lade Konfig");
+  Serial.println("  Lade Konfig");
   // Lies den EEPROM bei Adresse 0 aus
   EEPROM.get(0, tempConfig); 
   // Die Struct enthält als erstes immer den C-String "MRA-b" und als letztes immer "MRA-e". Prüfe darauf.
   if (strcmp(tempConfig.head, "MRAb") == 0 && (strcmp(tempConfig.foot, "MRAe") == 0)) {
-    Serial.println("Konfig erfolgreich geladen:");
+    Serial.println("  Konfig erfolgreich geladen:");
     copyConfig(tempConfig, config);
     printConfig(config);
     returnValue = true;
   } else {
-    Serial.println("Konfig konnte nicht geladen werden, habe folgendes erhalten:");
+    Serial.println("  Konfig konnte nicht geladen werden, habe folgendes erhalten:");
     printConfig(tempConfig);
     returnValue = false;
   }
@@ -384,21 +384,22 @@ void htmlGetHeader(int refresh) {
 
 void htmlGetConfig() {
   htmlGetHeader(0);
-  client.print("<html><body>");
-  client.print("<h1>Konfiguration</h1>");
-  client.print("<form method='get' action='/update'>");
-  client.print("<p>WLAN aktiv: <input type='checkbox' name='wifiActive' " + String(config.wifiActive ? "checked" : "") + "></p>");
-  client.print("<p>SSID: <input type='text' name='wifiSsid' value='" + String(config.wifiSsid) + "'></p>");
-  client.print("<p>Passwort: <input type='text' name='wifiPass' value='" + String(config.wifiPass) + "'></p>");
-  client.print("<p>Modus (a=Access Point, c=Client): <input type='text' name='wifiMode' value='" + String(config.wifiMode) + "'></p>");
-  client.print("<p>WLAN Timeout: <input type='text' name='wifiTimeout' value='" + String(config.wifiTimeout) + "'></p>");
+  client.print("<html>");
+  client.print("  <body>");
+  client.print("    <h1>Konfiguration</h1>");
+  client.print("    <form method='get' action='/update'>");
+  client.print("      <p>WLAN aktiv: <input type='checkbox' name='wifiEnabled' " + String(config.wifiEnabled ? "checked" : "") + "></p>");
+  client.print("      <p>SSID: <input type='text' name='wifiSsid' value='" + String(config.wifiSsid) + "'></p>");
+  client.print("      <p>Passwort: <input type='text' name='wifiPass' value='" + String(config.wifiPass) + "'></p>");
+  client.print("      <p>Modus (a=Access Point, c=Client): <input type='text' name='wifiMode' value='" + String(config.wifiMode) + "'></p>");
+  client.print("      <p>WLAN Timeout: <input type='text' name='wifiTimeout' value='" + String(config.wifiTimeout) + "'></p>");
 
-  client.print("<p>MQTT aktiv: <input type='checkbox' name='mqttActive' " + String(config.mqttActive ? "checked" : "") + "></p>");
-  client.print("<p>MQTT Server: <input type='text' name='mqttServer' value='" + String(config.mqttServer) + "'></p>");
-  client.print("<p>MQTT Port: <input type='text' name='mqttPort' value='" + String(config.mqttPort) + "'></p>");
-  client.print("<p>MQTT Name: <input type='text' name='mqttName' value='" + String(config.mqttName) + "'></p>");
-  client.print("<p>MQTT Benutzer: <input type='text' name='mqttUser' value='" + String(config.mqttUser) + "'></p>");
-  client.print("<p>MQTT Passwort: <input type='text' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
+  client.print("      <p>MQTT aktiv: <input type='checkbox' name='mqttEnabled' " + String(config.mqttEnabled ? "checked" : "") + "></p>");
+  client.print("      <p>MQTT Server: <input type='text' name='mqttServer' value='" + String(config.mqttServer) + "'></p>");
+  client.print("      <p>MQTT Port: <input type='text' name='mqttPort' value='" + String(config.mqttPort) + "'></p>");
+  client.print("      <p>MQTT Name: <input type='text' name='mqttName' value='" + String(config.mqttName) + "'></p>");
+  client.print("      <p>MQTT Benutzer: <input type='text' name='mqttUser' value='" + String(config.mqttUser) + "'></p>");
+  client.print("      <p>MQTT Passwort: <input type='text' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
 
   client.print("<p/>");
   client.print("<table>");
@@ -406,36 +407,40 @@ void htmlGetConfig() {
   client.print("<th>Adresse</th>");
   client.print("<th>Name</th>");
   client.print("<th>Format</th>");
+  client.print("<th>FMin</th>");
+  client.print("<th>FMax</th>");
   client.print("<th>Dezimalstellen</th>");
   client.print("<th>Min</th>");
   client.print("<th>Max</th>");
   for (int i = 0; i < sensorConfigCount; i++) {
-    client.print("<tr>");  
-    client.print("<td>" + String(i) + "</td>");  
-    client.print("<td><input type='text' name='sensorAddress"        + String(i) + "' value='" + String(config.sensorConfig[i].address)   + "'></td>");  
-    client.print("<td><input type='text' name='sensorName"           + String(i) + "' value='" + String(config.sensorConfig[i].name)      + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueFormat"    + String(i) + "' value='" + String(config.sensorConfig[i].format)    + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueFormatMin" + String(i) + "' value='" + String(config.sensorConfig[i].formatMin) + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueFormatMax" + String(i) + "' value='" + String(config.sensorConfig[i].formatMax) + "'></td>");  
-    client.print("<td><input type='text' name='sensorValuePrecision" + String(i) + "' value='" + String(config.sensorConfig[i].precision) + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueMin"       + String(i) + "' value='" + String(config.sensorConfig[i].min)       + "'></td>");  
-    client.print("<td><input type='text' name='sensorValueMax"       + String(i) + "' value='" + String(config.sensorConfig[i].max)       + "'></td>");  
-    client.print("</tr>");  
+    client.print("        <tr>");  
+    client.print("          <td>" + String(i) + "</td>");  
+    client.print("          <td><input type='text' name='sensorAddress"        + String(i) + "' value='" + String(config.sensorConfig[i].address)   + "'></td>");  
+    client.print("          <td><input type='text' name='sensorName"           + String(i) + "' value='" + String(config.sensorConfig[i].name)      + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueFormat"    + String(i) + "' value='" + String(config.sensorConfig[i].format)    + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueFormatMin" + String(i) + "' value='" + String(config.sensorConfig[i].formatMin) + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueFormatMax" + String(i) + "' value='" + String(config.sensorConfig[i].formatMax) + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValuePrecision" + String(i) + "' value='" + String(config.sensorConfig[i].precision) + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueMin"       + String(i) + "' value='" + String(config.sensorConfig[i].min)       + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueMax"       + String(i) + "' value='" + String(config.sensorConfig[i].max)       + "'></td>");  
+    client.print("        </tr>");  
   }
-  client.print("</table>");
+  client.print("      </table>");
 
-  client.print("<input type='submit' value='Speichern'>");
-  client.print("</form>");
-  client.print("<br/>");
-  client.print("<br/>");
-  client.print("<a href=\"/reboot\">Neustart</a>"); 
-  client.print("<br/>");
-  client.print("<br/>");
-  client.print("<a href=\"/\">Zur&uuml;ck</a>");
-  client.print("<br/>");
-  client.print("<br/>");
-  client.print("<a href=\"load\">Konfig laden</a>");
-  client.print("</body></html>");
+  client.print("      <input type='submit' value='Speichern'>");
+  client.print("    </form>");
+  client.print("    <br/>");
+  client.print("    <br/>");
+  client.print("    <a href=\"/reboot\">Neustart</a>"); 
+  client.print("    <br/>");
+  client.print("    <br/>");
+  client.print("    <br/>");
+  client.print("    <a href=\"/\">Zur&uuml;ck</a>");
+  client.print("    <br/>");
+  client.print("    <br/>");
+  client.print("    <a href=\"load\">Konfig laden</a>");
+  client.print("  </body>");
+  client.print("</html>");
 }
 
 void htmlSetConfig() {
@@ -455,12 +460,15 @@ void htmlSetConfig() {
   // Extrahiere die aktualisierten Werte aus dem HTTP-Body
   config.wifiActive = body.indexOf("wifiActive=on") != -1;
 
+// Wifi
+  config.wifiEnabled = body.indexOf("wifiEnabled=on") != -1;
   strcpy(config.wifiSsid, getValue(body, "wifiSsid"));
   strcpy(config.wifiPass, getValue(body, "wifiPass"));
   config.wifiMode = getValue(body, "wifiMode")[0];
   config.wifiTimeout = atoi(getValue(body, "wifiTimeout")); // Umwandlung in Integer
 
-  config.mqttActive = body.indexOf("mqttActive=on") != -1;
+  // MQTT
+  config.mqttEnabled = body.indexOf("mqttEnabled=on") != -1;
   strcpy(config.mqttServer, getValue(body, "mqttServer"));
   Serial.print("mqttServer: ");
   Serial.println(config.mqttServer);
@@ -936,6 +944,9 @@ void updateLevels() {
         } else {
           Serial.print(" erfolgreich abgefragt");
           updateSensorValue(sensorList[i].address, ds2438.getVoltage(DS2438_CHA));
+}
+      } else {
+        updateSensorValue(sensorList[i].address, random(0,2) + (1 / random(1,10)));
         }
         Serial.print(": Timestamp: ");
         Serial.print(ds2438.getTimestamp());
@@ -946,11 +957,7 @@ void updateLevels() {
         Serial.print("v, Kanal B = ");
         Serial.print(ds2438.getVoltage(DS2438_CHB), 1);
         Serial.println("v.");
-      } else {
-        Serial.println(" Dummywert erzeugt");
-        updateSensorValue(sensorList[i].address, random(0,2) + (1 / random(1,10)));
-      }
-      //delete &ds2438;  // MR: Keine Ahnung warum, aber das führt zu nem Freeze
+            //delete &ds2438;  // MR: Keine Ahnung warum, aber das führt zu nem Freeze
     }
   }
   Serial.println("updateLevels() end");
@@ -1052,10 +1059,10 @@ void setup1Wire() {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
       tft.println("Dryrun, erzeuge Dummy-Geraete");
       dummySensors = true;
-      addSensor("28111111251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1, 23);
-      addSensor("28222222251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1, 40);
-      addSensor("33333333351601", "Dmy Lvl 1", 'b', "%3s l", 0, 120, 0,  0, 100, 25);
-      addSensor("33444444451601", "Dmy Lvl 2", 'b', "%3s %%", 0, 100, 0,  0,   2, 1.5);
+      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1, 23);
+      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1, 40);
+      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 120, 0,  0, 100, 25);
+      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 100, 0,  0,   2, 1.5);
     }
   #endif
 
@@ -1152,7 +1159,7 @@ void printWiFiStatus() {
 
 boolean checkWiFi() {
   // Prüfe, ob WiFi überhaupt aktiviert tist
-  if (!config.wifiActive) {
+  if (!config.wifiEnabled) {
     return true;
   }
   // Ermittle den Zeitpunkt, bis zu dem der Verbindungsversuch dauern darf
@@ -1224,7 +1231,7 @@ void setupMemory() {
 }
 
 void setupWifi() {
-  if (!config.wifiActive) {
+  if (!config.wifiEnabled) {
     return;
   }
   Serial.println("setupWifi() begin");
@@ -1235,14 +1242,14 @@ void setupWifi() {
 
   String fv = WiFi.firmwareVersion();
   if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
-    Serial.println("***** Bitte WIFI Firmware aktualisieren! *****");
+    Serial.println("  ***** Bitte WIFI Firmware aktualisieren! *****");
   }
   Serial.println("setupWifi() end");
 }
 
 boolean connectToMQTT() {
   // Prüfe, ob MQTT überhaupt aktivier tist
-  if (!config.mqttActive) {
+  if (!config.mqttEnabled) {
     return true;
   }
 
@@ -1378,7 +1385,7 @@ void sendTemperaturesToMQTT() {
   char payload[10];
 
   // Prüfe, ob WiFi überhaupt aktivier tist
-  if (!config.mqttActive) {
+  if (!config.mqttEnabled) {
     return;
   }
 
