@@ -11,10 +11,8 @@ typedef float SensorValueMax;
 typedef float SensorValueFormatMin;
 typedef float SensorValueFormatMax;
 
-struct SensorData {
-  SensorAddress         address    = "";    // Adresse des Sensors userfriendly
-  DeviceAddress         deviceAddress;      // Adresse des Sensors als HEX
-  SensorType            type       = '.';   // Typ, derzeit werden nur t, b und u unterstützt
+
+struct SensorConfig {
   SensorName            name       = "";    // Name zur Anzeige
   SensorValueFormat     format     = "%s";  // Format-String zur Darstellung des Wertes
   SensorValueFormatMin  formatMin  = -1;    // Minimum des Anzeige-Wertes
@@ -22,6 +20,18 @@ struct SensorData {
   SensorValuePrecision  precision  = 0;     // Dezimalstellen des Wertes
   SensorValueMin        min        = -1;    // Minimum des Messwertes 
   SensorValueMax        max        = -1;    // Minimum des Messwertes
+};
+
+struct PersistantSensorConfig {
+  SensorAddress         address    = "";
+  SensorConfig          config;
+};
+
+struct Sensor {
+  SensorAddress         address    = "";    // Adresse des Sensors userfriendly
+  DeviceAddress         deviceAddress;      // Adresse des Sensors als HEX
+  SensorType            type       = '.';   // Typ, derzeit werden nur t, b und u unterstützt
+  SensorConfig          config;
   float                 value;
 };
 
@@ -52,16 +62,6 @@ struct SensorData {
 */
 
 
-struct SensorConfig {
-  SensorAddress         address   = "";
-  SensorName            name      = "";
-  SensorValueFormat     format    = "%s";
-  SensorValueFormatMin  formatMin  = -1;
-  SensorValueFormatMax  formatMax  = -1;
-  SensorValuePrecision  precision = 0;
-  SensorValueMin        min       = -1;
-  SensorValueMax        max       = -1;
-};
 
 const int sensorConfigCount = 10;
 
@@ -103,7 +103,7 @@ void sensorValueToDisplay(const float sensorValue, const SensorValueFormat forma
   }
   Serial.print("  dtostrf: calcedValue=");
   Serial.print(calcedValue);
-  Serial.print(" minField=0 precision=");
+  Serial.print(" precision=");
   Serial.print(precision);
   dtostrf(calcedValue, 0, precision, stringBuffer);
   Serial.print("  stringBuffer: ");
