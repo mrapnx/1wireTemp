@@ -1,39 +1,51 @@
 #include <Arduino.h>
 #include <DallasTemperature.h>
 
-typedef char  SensorAddress    [17];
-typedef char  SensorType;
-typedef char  SensorName       [21];
-typedef char  SensorValueFormat[11];
+typedef char  SensorAddress           [17];
+typedef char  SensorName              [21];
+typedef char  SensorValueFormat       [11];
 typedef int   SensorValuePrecision;
 typedef float SensorValueMin;
 typedef float SensorValueMax;
 typedef float SensorValueFormatMin;
 typedef float SensorValueFormatMax;
 
+typedef enum {
+	T_DS18B20 = 't',
+  T_DS18S20 = 't',
+  T_DS1822  = 't',
+  T_DS2438  = 'b',
+  T_UNKNOWN = 'u'
+} SensorType;
 
 struct SensorConfig {
-  SensorName            name       = "";    // Name zur Anzeige
-  SensorValueFormat     format     = "%s";  // Format-String zur Darstellung des Wertes
-  SensorValueFormatMin  formatMin  = -1;    // Minimum des Anzeige-Wertes
-  SensorValueFormatMax  formatMax  = -1;    // Maximum des Anzeige-Wertes
-  SensorValuePrecision  precision  = 0;     // Dezimalstellen des Wertes
-  SensorValueMin        min        = -1;    // Minimum des Messwertes 
-  SensorValueMax        max        = -1;    // Minimum des Messwertes
+  SensorName            name            = "";        // Name zur Anzeige
+  SensorValueFormat     format          = "%s";      // Format-String zur Darstellung des Wertes
+  SensorValueFormatMin  formatMin       = -1;        // Minimum des Anzeige-Wertes
+  SensorValueFormatMax  formatMax       = -1;        // Maximum des Anzeige-Wertes
+  SensorValuePrecision  precision       = 0;         // Dezimalstellen des Wertes
+  SensorValueMin        min             = -1;        // Minimum des Messwertes 
+  SensorValueMax        max             = -1;        // Minimum des Messwertes
 };
 
 struct PersistantSensorConfig {
-  SensorAddress         address    = "";
-  SensorConfig          config;
+  SensorAddress         address         = "";        // Addresse des zu konfigurierenden Sensors
+  SensorConfig          config;                      // Anzuwendende Konfig
 };
 
 struct Sensor {
-  SensorAddress         address    = "";    // Adresse des Sensors userfriendly
-  DeviceAddress         deviceAddress;      // Adresse des Sensors als HEX
-  SensorType            type       = '.';   // Typ, derzeit werden nur t, b und u unterstützt
+  SensorAddress         address         = "";         // Adresse des Sensors userfriendly
+  DeviceAddress         deviceAddress;                // Adresse des Sensors als HEX
+  SensorType            type            = T_UNKNOWN;  // Typ, derzeit werden nur t, b und u unterstützt
   SensorConfig          config;
   float                 value;
 };
+
+struct Sensors {
+  Sensor*               sensorList      = nullptr;    // Zeiger auf das Array von SensorData
+  int                   count           = 0;          // Aktuelle Anzahl von Sensoren
+};
+
 
 /* 
     Die Logik zur Anzeige ist wie folgt: 
@@ -61,21 +73,57 @@ struct Sensor {
 
 */
 
-
-
-const int sensorConfigCount = 10;
-
 // *************** Deklaration der Funktionen
 byte convertHexCStringToByte(const char* hexString);
 String deviceAddressToStr(DeviceAddress addr);
 void deviceAddressToStrNew(const DeviceAddress addr, String out);
 const char* deviceAddressToChar(DeviceAddress addr); 
 bool strToDeviceAddress(const String &str, DeviceAddress &addr);
-bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType);
+bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &sensorType);
 void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
 void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]);
+void sensorValueToDisplay(const Sensor sensor, char displayValue[30]);
 
 // ***************  Funktionen
+void sensorValueToDisplay(const Sensor sensor, char displayValue[30]) {
+    char stringBuffer[30] = "";
+  float calcedValue = -1;
+  Serial.println("sensorValueToDisplay() begin");
+
+  // Wenn min oder max nicht gesetzt sind
+  if (sensor.config.min < 0 || sensor.config.max < 0) {
+    // Erfolgt keine Umrechnung, sondern die Übernahme des float Wertes
+    Serial.println("  Keine Umrechnung, direkte Anzeige");
+    calcedValue = sensor.value;
+  } else {
+    // Plausi-Prüfung
+    if (sensor.value >= sensor.config.min && sensor.value <= sensor.config.max && sensor.config.max > sensor.config.min) {
+      if (sensor.config.formatMin < 0 || sensor.config.formatMax < 0) {
+        Serial.println("  Umrechnung in Prozentwert");
+        calcedValue = (sensor.value - sensor.config.min) / (sensor.config.max - sensor.config.min) * 100;
+      } else {
+        Serial.println("  Umrechnung in anteiligen Wert");
+        calcedValue = ((sensor.config.formatMax - sensor.config.formatMin) * (sensor.value - sensor.config.min) / (sensor.config.max - sensor.config.min)) + sensor.config.formatMin;
+      }
+    } else {
+      Serial.println("  Umrechnung nicht möglich");
+      calcedValue = sensor.value;
+    }
+  }
+  Serial.print("  dtostrf: calcedValue=");
+  Serial.print(calcedValue);
+  Serial.print(" precision=");
+  Serial.print(sensor.config.precision);
+  dtostrf(calcedValue, 0, sensor.config.precision, stringBuffer);
+  Serial.print("  stringBuffer: ");
+  Serial.println(stringBuffer);
+  sprintf(displayValue, sensor.config.format, stringBuffer);
+  Serial.print("  displayValue: ");
+  Serial.println(displayValue);
+  Serial.println("sensorValueToDisplay() end");
+}
+
+[[deprecated("Diese Funktion wird eigentlich nicht mehr gebraucht, da es eine Version gibt, die eine Sensor-Struct annimmt")]]
 void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]) {
   char stringBuffer[30] = "";
   float calcedValue = -1;
@@ -155,7 +203,7 @@ bool strToDeviceAddress(const String &str, DeviceAddress &addr) {
 }
 
 
-bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorType) {
+bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &sensorType) {
   char code[17];
   byte firstByte;
   // Überprüfe nur das erste Byte des char-Arrays
@@ -164,19 +212,19 @@ bool getSensorTypeByAddress(const SensorAddress manufacturerCode, char& sensorTy
 
   switch (firstByte) {
     case 0x28:
-      sensorType = 't'; // DS18B20 Temperatursensor
+      sensorType = T_DS18B20; // DS18B20 Temperatursensor
       return true;
     case 0x10:
-      sensorType = 't'; // DS18S20 Temperatursensor
+      sensorType = T_DS18S20; // DS18S20 Temperatursensor
       return true;
     case 0x22:
-      sensorType = 't'; // DS1822 Temperatursensor
+      sensorType = T_DS1822; // DS1822 Temperatursensor
       return true;
     case 0x26:
-      sensorType = 'b'; // DS2438 (Smart Battery Monitor)
+      sensorType = T_DS2438; // DS2438 (Smart Battery Monitor)
       return true;
     default:
-      sensorType = 'u';
+      sensorType = T_UNKNOWN;
       return false;
     }
 }

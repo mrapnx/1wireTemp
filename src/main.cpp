@@ -1,3 +1,22 @@
+/* *************   Wie es geht....
+
+loadConfig()
+1. Config wird aus Flash geladen 
+   => Config liegt in config.sensorConfig vor
+
+setup1Wire()
+2. Alle Sensoren werden per oneWire.search() ermittelt  
+   => Sensoren liegen in dallasSensors vor
+3. Es wird durch alle Sensoren in dallasSensors iteriert und die Config-Werte ermittelt
+4. Zusammen mit den Config-Werten wird nun per addSensor() ein Eintrag in sensors.sensorList erzeugt
+   => Nun liegen alle Sensoren in sensors.sensorList vor
+
+loop()
+5. Per updateTemperatures() und updateLevels() werden anhand der Sensor-Adressen in sensors.sensorList die aktuellen Werte aus dallasSensors bzw. aus DS2438 ermittelt und in sensors.sensorList geschrieben
+6. Per sensorValueToDisplay() wird nun der Wert mit Hilfe der Config im Sensor in einen C-String konvertiert
+
+*/
+
 #include <Arduino.h>
 #include <avr/dtostrf.h>
 #include <Wire.h>
@@ -14,6 +33,8 @@
 // #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
 
 // *************** Konfig-Grundeinstellungen
+const int sensorConfigCount = 10;  // Gibt an, wie viele Sensoren konfiguriert und gespeichert werden können
+
 typedef struct {
   char    head           [5] = "MRAb";
   // WLAN
@@ -62,6 +83,7 @@ uint16_t  textColor   = 0xFFFF; // Weiß
 uint16_t  backColor   = 0x0000; // Schwarz
 boolean   initalClear = false;
 
+
 // 1-Wire
 const int PinOneWireBus = 10; // Pin, an dem der 1-Wire-Bus angeschlossen ist // = D10
 
@@ -75,6 +97,8 @@ const int blinkInterval       = 500; // Frequenz in Millisekunden, in der die or
 
 
 // ***************  Globale Variablen
+
+// Allgemein
 unsigned long tempCheckLast   = 0;
 unsigned long levelCheckLast  = 0;
 unsigned long sendLast        = 0;
@@ -86,10 +110,9 @@ boolean       buttonState     = false;
 boolean       dummySensors    = false;
 
 // 1-Wire
-Sensor*           sensorList = nullptr;       // Zeiger auf das Array von SensorData
-int               numberOfSensors = 0;        // Aktuelle Anzahl von Sensoren
 OneWire           oneWire(PinOneWireBus);     // 1-Wire Grundobjekt
-DallasTemperature sensors(&oneWire);          // 1-Wire Objekt für Temperatursensoren
+DallasTemperature dallasSensors(&oneWire);    // 1-Wire Objekt für Temperatursensoren
+Sensors           sensors;                    // Sensorliste
 
 // Webserver
 IPAddress   ip; 
@@ -109,33 +132,29 @@ FlashStorage(configStorage, Config);
 Config config;
 
 // *************** Deklaration der Funktionen
-// Zustands-Methoden
+
+// Zustands-Funktionen
 boolean sensorsFine();
 boolean wifiFine();
 boolean checkWiFi();
 boolean connectToMQTT();
 
-// Config-Methoden
+// Config-Funktionen
 boolean loadConfig();
 void saveConfig();
 void printConfig(Config &pconfig);
 void copyConfig(const Config &from, Config &to);
 
-// Sensorlisten-Methoden
+// Sensorlisten-Funktionen
 void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value);
+void addSensor(Sensor sensor);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
 void clearSensorList();
-void getSensorName(const SensorAddress address, SensorName); 
-void getSensorValueFormat(const SensorAddress address, SensorValueFormat format);
-SensorValueMin getSensorValueMin(const SensorAddress address);
-SensorValueMax getSensorValueMax(const SensorAddress address);
-SensorValuePrecision getSensorValuePrecision(const SensorAddress address);
-SensorValueFormatMin getSensorValueFormatMin(const SensorAddress address);
-SensorValueFormatMax getSensorValueFormatMax(const SensorAddress address);
 boolean getSensorType(const SensorAddress address, SensorType& type);
+boolean getSensorConfig(const SensorAddress address, SensorConfig &output);
 
-// Ein- & Ausgabe-Methoden
+// Ein- & Ausgabe-Funktionen
 void updateTemperatures();
 void updateLevels();
 void printSensors();
@@ -147,7 +166,7 @@ void sendTemperaturesToMQTT();
 boolean getButtonState();
 void reset();
 
-// HTTP-Methoden
+// HTTP-Funktionen
 char* getValue(const String& data, const char* key);
 String getValuesAsHtml();
 char* urlDecode(const char* input);
@@ -158,7 +177,7 @@ void htmlGetConfig();
 void htmlSetConfig();
 void httpProcessRequests();
 
-//  Setup-Methoden
+//  Setup-Funktionen
 void setup1Wire(); 
 void setupDisplay();
 void setupMemory();
@@ -260,41 +279,41 @@ void copyConfig(const Config &from, Config &to) {
 void printConfig(Config &pconfig) {
   Serial.println("printConfig() begin");
 
-  Serial.print("wifiEnabled: ");
+  Serial.print("  wifiEnabled: ");
   Serial.println(int(pconfig.wifiEnabled));
 
-  Serial.print("ssid: ");
+  Serial.print("  ssid: ");
   Serial.println(pconfig.wifiSsid);
 
-  Serial.print("pass: ");
+  Serial.print("  pass: ");
   Serial.println(pconfig.wifiPass);
 
-  Serial.print("mode: ");
+  Serial.print("  mode: ");
   Serial.println(pconfig.wifiMode);
 
-  Serial.print("wifiTimeout: ");
+  Serial.print("  wifiTimeout: ");
   Serial.println(pconfig.wifiTimeout);
 
-  Serial.print("mqttEnabled: ");
+  Serial.print("  mqttEnabled: ");
   Serial.println(int(pconfig.mqttEnabled));
 
-  Serial.print("mqttServer: ");
+  Serial.print("  mqttServer: ");
   Serial.println(pconfig.mqttServer);
 
-  Serial.print("mqttPort: ");
+  Serial.print("  mqttPort: ");
   Serial.println(pconfig.mqttPort);
 
-  Serial.print("mqttName: ");
+  Serial.print("  mqttName: ");
   Serial.println(pconfig.mqttName);
 
-  Serial.print("mqttUser: ");
+  Serial.print("  mqttUser: ");
   Serial.println(pconfig.mqttUser);
 
-  Serial.print("mqttPassword: ");
+  Serial.print("  mqttPassword: ");
   Serial.println(pconfig  .mqttPassword);
 
   for (int i = 0; i < sensorConfigCount; i++) {
-    Serial.print("sensorConfig");  
+    Serial.print("  sensorConfig");  
     Serial.print(i);  
     Serial.print(": Address: ");  
     Serial.print(pconfig.sensorConfig[i].address);  
@@ -315,13 +334,13 @@ void printConfig(Config &pconfig) {
 
 void clearSensorList() {
   // Befreie den Speicher von sensorList
-  free(sensorList);
+  free(sensors.sensorList);
 
   // Setze die Anzahl der Sensoren auf 0
-  numberOfSensors = 0;
+  sensors.count = 0;
 
   // Setze den Zeiger auf null, um sicherzustellen, dass er nicht auf ungültigen Speicher zeigt
-  sensorList = nullptr;
+  sensors.sensorList = nullptr;
 }
 
 void saveConfig() {
@@ -632,63 +651,104 @@ char c;
 }
 
 void printSensors() {
-  Serial.println("  Anzahl Sensoren im Array: " + String(numberOfSensors));
-  for (int i = 0; i < numberOfSensors; i++) {
+  Serial.println("  Anzahl Sensoren im Array: " + String(sensors.count));
+  for (int i = 0; i < sensors.count; i++) {
     Serial.print("  Sensor " + String(i) + " Adresse: ");
-    Serial.print(sensorList[i].address);
+    Serial.print(sensors.sensorList[i].address);
     Serial.print(" Name: ");
-    Serial.print(sensorList[i].config.name);
+    Serial.print(sensors.sensorList[i].config.name);
     Serial.print(" Typ: ");
-    Serial.print(sensorList[i].type);
+    Serial.print(sensors.sensorList[i].type);
     Serial.print(" Wert: ");
-    Serial.println(sensorList[i].value);
+    Serial.println(sensors.sensorList[i].value);
   }
 }
 
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value) {
-  Sensor*   tempArray = (Sensor*)malloc((numberOfSensors + 1) * sizeof(Sensor));
+void addSensor(Sensor sensor) {
+  Sensor*   tempArray = (Sensor*)malloc((sensors.count + 1) * sizeof(Sensor));
   DeviceAddress tempDs2438DeviceAddress;
 
   Serial.println("addSensor(): begin");
 
   // Übertrage vorhandene Daten in das temporäre Array
-  for (int i = 0; i < numberOfSensors; i++) {
-    tempArray[i] = sensorList[i];
+  for (int i = 0; i < sensors.count; i++) {
+    tempArray[i] = sensors.sensorList[i];
+  }
+
+  // Füge das neue Sensorobjekt hinzu
+  Serial.print("  Füge Sensor ");
+  Serial.print(sensor.address);
+  Serial.println(" hinzu");
+  strcpy(tempArray[sensors.count].address, sensor.address);
+  strcpy(tempArray[sensors.count].config.name, sensor.config.name);
+  tempArray[sensors.count].type = sensor.type;
+  strcpy(tempArray[sensors.count].config.format, sensor.config.format);
+  tempArray[sensors.count].config.formatMin = sensor.config.formatMin;
+  tempArray[sensors.count].config.formatMax = sensor.config.formatMax;
+  tempArray[sensors.count].config.precision = sensor.config.precision;
+  tempArray[sensors.count].config.min = sensor.config.min;
+  tempArray[sensors.count].config.max = sensor.config.max;
+  tempArray[sensors.count].value = sensor.value;
+  strToDeviceAddress(String(sensor.address), tempDs2438DeviceAddress);
+  copyDeviceAddress(tempDs2438DeviceAddress, tempArray[sensors.count].deviceAddress);
+
+  // Erhöhe die Anzahl der Sensoren
+  sensors.count++;
+
+  // Befreie den alten Speicher
+  free(sensors.sensorList);
+
+  // Weise den neuen Speicher zu
+  sensors.sensorList = tempArray;
+
+  Serial.println("addSensor(): end");
+}
+
+[[deprecated("Diese Funktion wird eigentlich nicht mehr gebraucht, da es eine Version gibt, die eine Sensor-Struct annimmt")]]
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value) {
+  Sensor*   tempArray = (Sensor*)malloc((sensors.count + 1) * sizeof(Sensor));
+  DeviceAddress tempDs2438DeviceAddress;
+
+  Serial.println("addSensor(): begin");
+
+  // Übertrage vorhandene Daten in das temporäre Array
+  for (int i = 0; i < sensors.count; i++) {
+    tempArray[i] = sensors.sensorList[i];
   }
 
   // Füge das neue Sensorobjekt hinzu
   Serial.print("  Füge Sensor ");
   Serial.print(address);
   Serial.println(" hinzu");
-  strcpy(tempArray[numberOfSensors].address, address);
-  strcpy(tempArray[numberOfSensors].config.name, name);
-  tempArray[numberOfSensors].type = type;
-  strcpy(tempArray[numberOfSensors].config.format, format);
-  tempArray[numberOfSensors].config.formatMin = formatMin;
-  tempArray[numberOfSensors].config.formatMax = formatMax;
-  tempArray[numberOfSensors].config.min = min;
-  tempArray[numberOfSensors].config.max = max;
-  tempArray[numberOfSensors].config.precision = precision;
-  tempArray[numberOfSensors].value = value;
+  strcpy(tempArray[sensors.count].address, address);
+  strcpy(tempArray[sensors.count].config.name, name);
+  tempArray[sensors.count].type = type;
+  strcpy(tempArray[sensors.count].config.format, format);
+  tempArray[sensors.count].config.formatMin = formatMin;
+  tempArray[sensors.count].config.formatMax = formatMax;
+  tempArray[sensors.count].config.min = min;
+  tempArray[sensors.count].config.max = max;
+  tempArray[sensors.count].config.precision = precision;
+  tempArray[sensors.count].value = value;
   strToDeviceAddress(String(address), tempDs2438DeviceAddress);
-  copyDeviceAddress(tempDs2438DeviceAddress, tempArray[numberOfSensors].deviceAddress);
+  copyDeviceAddress(tempDs2438DeviceAddress, tempArray[sensors.count].deviceAddress);
 
   // Erhöhe die Anzahl der Sensoren
-  numberOfSensors++;
+  sensors.count++;
 
   // Befreie den alten Speicher
-  free(sensorList);
+  free(sensors.sensorList);
 
   // Weise den neuen Speicher zu
-  sensorList = tempArray;
+  sensors.sensorList = tempArray;
 
   Serial.println("addSensor(): end");
 }
 
 boolean updateSensorValue(const SensorAddress address, const float value) {
-   for (int i = 0; i < numberOfSensors; i++) {
-     if (strcmp(sensorList[i].address, address) == 0) {
-       sensorList[i].value = value;
+   for (int i = 0; i < sensors.count; i++) {
+     if (strcmp(sensors.sensorList[i].address, address) == 0) {
+       sensors.sensorList[i].value = value;
        return true; 
      }
    }
@@ -696,165 +756,60 @@ boolean updateSensorValue(const SensorAddress address, const float value) {
 }
 
 boolean getSensorType(const SensorAddress address, SensorType& type) {
-   for (int i = 0; i < numberOfSensors; i++) {
-     if (strcmp(sensorList[i].address, address) == 0) {
-       type = sensorList[i].type;
+   for (int i = 0; i < sensors.count; i++) {
+     if (strcmp(sensors.sensorList[i].address, address) == 0) {
+       type = sensors.sensorList[i].type;
        return true; 
      }
    }
    return false;
 }
 
-void getSensorValueFormat(const SensorAddress address, SensorValueFormat format) {
-  strcpy(format, "%s");
-  // Tacker durch das sensorConfig Array in config durch
-  for (int i = 0; i < sensorConfigCount; i++) {
-    // Vergleich die Adresse aus dem Parameter mit der in der Config
-    if (strcmp(address, config.sensorConfig[i].address) == 0) {
-      // Und gib bei Übereinstimmung den Namen zurück
-      strcpy(format, config.sensorConfig[i].config.format);
-      Serial.print("getSensorValueFormat(): Sensor gefunden: Adresse=");
-      Serial.print(address);
-      Serial.print(" format=");
-      Serial.println(format);
-      break;
-    }
-  }
-}
-
-SensorValuePrecision getSensorValuePrecision(const SensorAddress address) {
-  float result = 0;
+boolean getSensorConfig(const SensorAddress address, SensorConfig &output) {
   // Tacker durch das sensorConfig Array in config durch
   for (int i = 0; i < sensorConfigCount; i++) {
     // Vergleich die Adresse aus dem Parameter mit der in der Config
     if (strcmp(address, config.sensorConfig[i].address) == 0) {
       // Und gib bei Übereinstimmung den Min-Wert zurück
-      result = config.sensorConfig[i].config.precision;
-      Serial.print("getSensorValuePrecision(): Sensor gefunden: Adresse=");
-      Serial.print(address);
-      Serial.print(" precision=");
-      Serial.println(result);
-      break;
-    }
-  }
-  return result;
-}
-
-SensorValueFormatMax getSensorValueFormatMax(const SensorAddress address) {
-  float result = 0;
-  // Tacker durch das sensorConfig Array in config durch
-  for (int i = 0; i < sensorConfigCount; i++) {
-    // Vergleich die Adresse aus dem Parameter mit der in der Config
-    if (strcmp(address, config.sensorConfig[i].address) == 0) {
-      // Und gib bei Übereinstimmung den Min-Wert zurück
-      result = config.sensorConfig[i].config.formatMax;
-      Serial.print("getSensorValueFormatMax(): Sensor gefunden: Adresse=");
-      Serial.print(address);
-      Serial.print(" formatMax=");
-      Serial.println(result);
-      break;
-    }
-  }
-  return result;
-}
-
-
-SensorValueFormatMin getSensorValueFormatMin(const SensorAddress address) {
-  float result = 0;
-  // Tacker durch das sensorConfig Array in config durch
-  for (int i = 0; i < sensorConfigCount; i++) {
-    // Vergleich die Adresse aus dem Parameter mit der in der Config
-    if (strcmp(address, config.sensorConfig[i].address) == 0) {
-      // Und gib bei Übereinstimmung den Min-Wert zurück
-      result = config.sensorConfig[i].config.formatMin;
       Serial.print("getSensorValueFormatMin(): Sensor gefunden: Adresse=");
       Serial.print(address);
-      Serial.print(" formatMin=");
-      Serial.println(result);
-      break;
+      strcpy(config.sensorConfig[i].config.name, output.name);
+      strcpy(config.sensorConfig[i].config.format, output.format);
+      output.formatMin = config.sensorConfig[i].config.formatMin;
+      output.formatMax = config.sensorConfig[i].config.formatMax;
+      output.precision = config.sensorConfig[i].config.precision;
+      output.min = config.sensorConfig[i].config.min;
+      output.max = config.sensorConfig[i].config.max;
+      return true;
     }
   }
-  return result;
-}
-
-SensorValueMin getSensorValueMin(const SensorAddress address) {
-  float result = 0;
-  // Tacker durch das sensorConfig Array in config durch
-  for (int i = 0; i < sensorConfigCount; i++) {
-    // Vergleich die Adresse aus dem Parameter mit der in der Config
-    if (strcmp(address, config.sensorConfig[i].address) == 0) {
-      // Und gib bei Übereinstimmung den Min-Wert zurück
-      result = config.sensorConfig[i].config.min;
-      Serial.print("getSensorValueMin(): Sensor gefunden: Adresse=");
-      Serial.print(address);
-      Serial.print(" min=");
-      Serial.println(result);
-      break;
-    }
-  }
-  return result;
-}
-
-SensorValueMax getSensorValueMax(const SensorAddress address) {
-  float result = 0;
-  // Tacker durch das sensorConfig Array in config durch
-  for (int i = 0; i < sensorConfigCount; i++) {
-    // Vergleich die Adresse aus dem Parameter mit der in der Config
-    if (strcmp(address, config.sensorConfig[i].address) == 0) {
-      // Und gib bei Übereinstimmung den Max-Wert zurück
-      result = config.sensorConfig[i].config.max;
-      Serial.print("getSensorValueMax(): Sensor gefunden: Adresse=");
-      Serial.print(address);
-      Serial.print(" max=");
-      Serial.println(result);
-      break;
-    }
-  }
-  return result;
-}
-
-
-void getSensorName(const SensorAddress address, SensorName name) {
-  strcpy(name, "");
-  // Tacker durch das sensorConfig Array in config durch
-  for (int i = 0; i < sensorConfigCount; i++) {
-    // Vergleich die Adresse aus dem Parameter mit der in der Config
-    if (strcmp(address, config.sensorConfig[i].address) == 0) {
-      // Und gib bei Übereinstimmung den Namen zurück
-      strcpy(name, config.sensorConfig[i].config.name);
-      Serial.print("getSensorName(): Sensor gefunden: Adresse=");
-      Serial.print(address);
-      Serial.print(" name=");
-      Serial.println(name);
-      break;
-    }
-  }
+  return false;
 }
 
 void removeSensor(SensorAddress address) {
-  for (int i = 0; i < numberOfSensors; i++) {
-    if (sensorList[i].address == address) {
+  for (int i = 0; i < sensors.count; i++) {
+    if (sensors.sensorList[i].address == address) {
       // Sensor gefunden, löschen, indem die nachfolgenden Elemente verschoben werden
-      for (int j = i; j < numberOfSensors - 1; j++) {
-        sensorList[j] = sensorList[j + 1];
+      for (int j = i; j < sensors.count - 1; j++) {
+        sensors.sensorList[j] = sensors.sensorList[j + 1];
       }
 
       // Verringere die Anzahl der Sensoren
-      numberOfSensors--;
+      sensors.count--;
 
       // Reduziere die Speichergröße
-      Sensor* tempArray = (Sensor*)malloc(numberOfSensors * sizeof(Sensor));
+      Sensor* tempArray = (Sensor*)malloc(sensors.count * sizeof(Sensor));
 
       // Übertrage Daten in das temporäre Array
-      for (int k = 0; k < numberOfSensors; k++) {
-        tempArray[k] = sensorList[k];
+      for (int k = 0; k < sensors.count; k++) {
+        tempArray[k] = sensors.sensorList[k];
       }
 
       // Befreie den alten Speicher
-      free(sensorList);
+      free(sensors.sensorList);
 
       // Weise den neuen Speicher zu
-      sensorList = tempArray;
+      sensors.sensorList = tempArray;
 
       break;
     }
@@ -894,7 +849,7 @@ boolean wifiFine() {
 }
 
 boolean sensorsFine() {
- return sensors.getDeviceCount() > 0;
+ return dallasSensors.getDeviceCount() > 0;
 }
 
 void blink() {
@@ -919,12 +874,12 @@ void updateLevels() {
   Serial.println("updateLevels() begin");
   levelCheckLast = millis();
 
-  for (int i = 0; i < numberOfSensors; i++) {
-    if (sensorList[i].type == 'b') {
-      DS2438 ds2438(&oneWire, sensorList[i].deviceAddress);
+  for (int i = 0; i < sensors.count; i++) {
+    if (sensors.sensorList[i].type == 'b') {
+      DS2438 ds2438(&oneWire, sensors.sensorList[i].deviceAddress);
       ds2438.begin();
       Serial.print("  Sensor DS2438 ");
-      Serial.print(sensorList[i].address);
+      Serial.print(sensors.sensorList[i].address);
       Serial.print(" Adresse ");
       Serial.print((unsigned int)&ds2438, HEX);
       if (!dummySensors) {
@@ -933,10 +888,10 @@ void updateLevels() {
           Serial.print(" erfolglos abgefragt"); 
         } else {
           Serial.print(" erfolgreich abgefragt");
-          updateSensorValue(sensorList[i].address, ds2438.getVoltage(DS2438_CHA));
+          updateSensorValue(sensors.sensorList[i].address, ds2438.getVoltage(DS2438_CHA));
 }
       } else {
-        updateSensorValue(sensorList[i].address, random(0,2) + (1 / random(1,10)));
+        updateSensorValue(sensors.sensorList[i].address, random(0,2) + (1 / random(1,10)));
         }
         Serial.print(": Timestamp: ");
         Serial.print(ds2438.getTimestamp());
@@ -963,16 +918,16 @@ void updateTemperatures() {
 
   // Aktualisiere die Temperaturdaten
   Serial.println("  Aktualisiere Temperaturen");
-  sensors.requestTemperatures();
+  dallasSensors.requestTemperatures();
 
   // Iteriere durch alle Sensoren
-  for (int i = 0; i < numberOfSensors; i++) {
-    if (sensorList[i].type == 't') {
+  for (int i = 0; i < sensors.count; i++) {
+    if (sensors.sensorList[i].type == 't') {
       // Aktualisiere die Liste
       if (!dummySensors) {
-        updateSensorValue(sensorList[i].address, sensors.getTempC(sensorList[i].deviceAddress));
+        updateSensorValue(sensors.sensorList[i].address, dallasSensors.getTempC(sensors.sensorList[i].deviceAddress));
       } else {
-        updateSensorValue(sensorList[i].address, random(15,25));
+        updateSensorValue(sensors.sensorList[i].address, random(15,25));
       }
     }
   }
@@ -982,11 +937,7 @@ void updateTemperatures() {
 void setup1Wire() {
   byte              addrArray[8];
   String            address;
-  SensorAddress     addressC;
-  SensorName        nameC;
-  SensorType        typeC;
-  SensorValueFormat format;
-  DeviceAddress     addr;
+  Sensor            sensor;
 
   Serial.println("setup1Wire() begin");
 
@@ -998,54 +949,47 @@ void setup1Wire() {
   }
 
   // Starte Objekt für Temperatur-Sensoren
-  sensors.begin();
+  dallasSensors.begin();
 
   // Leere die Liste
   clearSensorList();
 
+  // Gib die gefundenen Sensoren aus
   Serial.println("  Gefundene 1-Wire-Sensoren:");
   tft.println("Gefundene 1-Wire-Sensoren:");
   printSensorAddresses();
 
   // Iteriere durch alle Sensoren
-  for (int i = 0; i < sensors.getDeviceCount(); i++) {
+  for (int i = 0; i < dallasSensors.getDeviceCount(); i++) {
     
     // Ermittle die Adresse
     Serial.println("  Ermittle Adresse Sensor " + String(i));
-    sensors.getAddress(addr, i); 
-    address = deviceAddressToStr(addr);
-    strcpy (addressC, address.c_str());
+    dallasSensors.getAddress(sensor.deviceAddress, i); 
+    address = deviceAddressToStr(sensor.deviceAddress);
+    strcpy (sensor.address, address.c_str());
     Serial.println("  address: " + address);
     Serial.print("  addressC: ");
-    Serial.println(addressC);
-
-    // Ermittle den Namen
-    Serial.println("  Ermittle Name Sensor " + String(i));
-    getSensorName(addressC, nameC);
-    Serial.print("  Name Sensor " + String(i) + ": ");
-    Serial.println(nameC);
-
-    // Ermittle das Format
-    Serial.println("  Ermittle Format Sensor " + String(i));
-    getSensorValueFormat(addressC, format);
-    Serial.print("  Format Sensor " + String(i) + ": ");
-    Serial.println(format);
-
+    Serial.println(sensor.address);
+    
     // Ermittle den Typ
     Serial.println("  Ermittle Typ Sensor " + String(i));
-    if (getSensorTypeByAddress(addressC, typeC) == true) {
+    if (getSensorTypeByAddress(sensor.address, sensor.type) == true) {
       Serial.println("  Typ erfolgreich ermittelt");
     } else {
       Serial.println("  Typ nicht erfolgreich ermittelt");
     }
     Serial.print("  Typ Sensor " + String(i) + ": ");
-    Serial.println(typeC);
+    Serial.println(sensor.type);
 
-    addSensor(addressC, nameC, typeC, format, getSensorValueFormatMin(addressC), getSensorValueFormatMax(addressC), getSensorValuePrecision(addressC), getSensorValueMin(addressC), getSensorValueMax(addressC), 0);
+    // Ermittle die Konfig
+    getSensorConfig(sensor.address, sensor.config);
+
+    // Füg den Sensor der Liste hinzu
+    addSensor(sensor);
   }  
 
   #ifdef DRYRUN
-    if (sensors.getDeviceCount() <= 0) {
+    if (dallasSensors.getDeviceCount() <= 0) {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
       tft.println("Dryrun, erzeuge Dummy-Geraete");
       dummySensors = true;
@@ -1069,18 +1013,18 @@ String getValuesAsHtml() {
   String returnString = "";
 
   Serial.println("getValuesAsHtml() begin");
-  for (int i = 0; i < numberOfSensors; i++) {
+  for (int i = 0; i < sensors.count; i++) {
   // Iteriere durch alle Sensoren
     // und wenn ein Name gesetzt ist,
-    if (!sensorList[i].config.name[0] == '\0') {
+    if (!sensors.sensorList[i].config.name[0] == '\0') {
       // Nimm den
-      strcpy(name, sensorList[i].config.name);
+      strcpy(name, sensors.sensorList[i].config.name);
     } else {
       // Sonst die Adresse
-      strcpy(name, sensorList[i].address);
+      strcpy(name, sensors.sensorList[i].address);
     }
     // Formattiere den Wert entspr. dem Value String
-    sensorValueToDisplay(sensorList[i].value, sensorList[i].config.format, sensorList[i].config.formatMin, sensorList[i].config.formatMax, sensorList[i].config.precision, sensorList[i].config.min, sensorList[i].config.max, buffer);
+    sensorValueToDisplay(sensors.sensorList[i], buffer);
     returnString = returnString + String(name) + ": " + String(buffer) + "</br>";
 
     Serial.println("  Ermittle Inhalt für Webserver: " + returnString);
@@ -1264,7 +1208,7 @@ boolean connectToMQTT() {
 
 void displayBackground() {
   int         height      = tft.height() - yBegin;
-  int         lineheight  = height / numberOfSensors;
+  int         lineheight  = height / sensors.count;
   int         line        = yBegin;
 
   Serial.println("displayBackground() begin"); 
@@ -1277,7 +1221,7 @@ void displayBackground() {
   #endif
 
   // Wenn keine Sensoren erkannt wurden, brich ab
-  if (numberOfSensors <= 0) {
+  if (sensors.count <= 0) {
   Serial.println("  Keine Sensoren vorhanden, breche ab"); 
   Serial.println("displayBackground() end"); 
     return;
@@ -1287,16 +1231,16 @@ void displayBackground() {
 
   // Beschriftungen
   tft.setTextSize(1);
-  for (int i = 0; i <= numberOfSensors; i++) {
+  for (int i = 0; i <= sensors.count; i++) {
     tft.setCursor(xBegin, line);
 
     // Wenn ein Name gesetzt ist,
-    if (!sensorList[i].config.name[0] == '\0') {
+    if (!sensors.sensorList[i].config.name[0] == '\0') {
       // Nimm den
-      tft.println(sensorList[i].config.name);
+      tft.println(sensors.sensorList[i].config.name);
     } else {
       // Sonst die Adresse
-      tft.println(sensorList[i].address);
+      tft.println(sensors.sensorList[i].address);
     }
     line = line + lineheight;
   }
@@ -1307,7 +1251,7 @@ void displayBackground() {
 void displayValues() {
   char        buffer[10];
   int         height      = tft.height() - yBegin;
-  int         lineheight  = height / numberOfSensors;
+  int         lineheight  = height / sensors.count;
   int         line        = yBegin;
   // Brich ab, wenn unser Inverall noch nicht erreicht ist
   if (millis() < displayLast + (displayInterval * 1000)) {
@@ -1324,7 +1268,7 @@ void displayValues() {
   }
 
   // Fehlermeldung, wenn keine Sensoren gefunden wurden
-  if (numberOfSensors <= 0) {
+  if (sensors.count <= 0) {
     Serial.println("  Keine Sensoren gefunden, deren Daten angezeigt werden könnten"); 
     Serial.println("displayValues() end"); 
     return;
@@ -1333,15 +1277,15 @@ void displayValues() {
   tft.setTextSize(2);
 
   // Iteriere durch alle Sensoren
-  for (int i = 0; i < numberOfSensors; i++) {
-    if (numberOfSensors <= 4) {
+  for (int i = 0; i < sensors.count; i++) {
+    if (sensors.count <= 4) {
       tft.setCursor(40, line+10);
     } else {
       tft.setCursor(70, line);
     }
 
     // Formattiere den Wert entspr. dem Value String
-    sensorValueToDisplay(sensorList[i].value, sensorList[i].config.format, sensorList[i].config.formatMin, sensorList[i].config.formatMax, sensorList[i].config.precision, sensorList[i].config.min, sensorList[i].config.max, buffer);
+    sensorValueToDisplay(sensors.sensorList[i], buffer);
     tft.println(buffer);
     line = line + lineheight;
   }
@@ -1397,19 +1341,19 @@ void sendTemperaturesToMQTT() {
   }
 
   // Fehlermeldung, wenn keine Sensoren gefunden wurden
-  if (sensors.getDeviceCount() <= 0) {
+  if (dallasSensors.getDeviceCount() <= 0) {
     Serial.println("sendTemperaturesToMQTT(): Keine Sensoren gefunden, deren Daten übermittelt werden könnten"); 
   }
 
   // Iteriere durch alle Sensoren
-  for (int i = 0; i < numberOfSensors; i++) {
+  for (int i = 0; i < sensors.count; i++) {
     // Ermittle die Temperatur
     Serial.println("  Ermittle temperatur sensor " + String(i));
     // Und bilde die MQTT-Nachricht
     strcpy(topic, "sensor/");
-    strcat(topic, sensorList[i].address);
+    strcat(topic, sensors.sensorList[i].address);
     strcat(topic, "/temperature");
-    dtostrf(sensorList[i].value, 3, 2, payload);
+    dtostrf(sensors.sensorList[i].value, 3, 2, payload);
     
     Serial.print("topic: ");
     Serial.print(topic);
@@ -1423,11 +1367,11 @@ void printSensorAddresses() {
   DeviceAddress tempAddress;
 
   Serial.print("  Anzahl: ");
-  Serial.println(sensors.getDeviceCount());
+  Serial.println(dallasSensors.getDeviceCount());
   tft.print("Anzahl: ");
-  tft.println(sensors.getDeviceCount());
-  for (int i = 0; i < sensors.getDeviceCount(); i++) {   
-    sensors.getAddress(tempAddress, i);
+  tft.println(dallasSensors.getDeviceCount());
+  for (int i = 0; i < dallasSensors.getDeviceCount(); i++) {   
+    dallasSensors.getAddress(tempAddress, i);
 
     Serial.print("  Sensor ");
     Serial.print(i);
