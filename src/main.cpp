@@ -33,7 +33,7 @@ loop()
 // #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
 
 // *************** Konfig-Grundeinstellungen
-const int sensorConfigCount = 10;  // Gibt an, wie viele Sensoren konfiguriert und gespeichert werden können
+const int sensorConfigCount = 10;  // Gibt fan, wie viele Sensoren konfiguriert und gespeichert werden können
 
 typedef struct {
   char    head           [5] = "MRAb";
@@ -773,8 +773,8 @@ boolean getSensorConfig(const SensorAddress address, SensorConfig &output) {
       // Und gib bei Übereinstimmung den Min-Wert zurück
       Serial.print("getSensorValueFormatMin(): Sensor gefunden: Adresse=");
       Serial.print(address);
-      strcpy(config.sensorConfig[i].config.name, output.name);
-      strcpy(config.sensorConfig[i].config.format, output.format);
+      strcpy(output.name, config.sensorConfig[i].config.name);
+      strcpy(output.format, config.sensorConfig[i].config.format);
       output.formatMin = config.sensorConfig[i].config.formatMin;
       output.formatMax = config.sensorConfig[i].config.formatMax;
       output.precision = config.sensorConfig[i].config.precision;
