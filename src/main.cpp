@@ -771,8 +771,8 @@ boolean getSensorConfig(const SensorAddress address, SensorConfig &output) {
     // Vergleich die Adresse aus dem Parameter mit der in der Config
     if (strcmp(address, config.sensorConfig[i].address) == 0) {
       // Und gib bei Übereinstimmung den Min-Wert zurück
-      Serial.print("getSensorValueFormatMin(): Sensor gefunden: Adresse=");
-      Serial.print(address);
+      Serial.print("getSensorConfig(): Sensor gefunden: Adresse=");
+      Serial.println(address);
       strcpy(output.name, config.sensorConfig[i].config.name);
       strcpy(output.format, config.sensorConfig[i].config.format);
       output.formatMin = config.sensorConfig[i].config.formatMin;
