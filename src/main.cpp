@@ -986,13 +986,13 @@ void setup1Wire() {
     Serial.println("  Ermittle Config Sensor " + String(i));
     if (getSensorConfig(sensor.address, tempConfig) == true) {
       Serial.println("  Config erfolgreich ermittelt");
-      strcpy(tempConfig.name,   sensor.config.name);
-      strcpy(tempConfig.format, sensor.config.format);
-      sensor.config.formatMin = tempConfig.formatMin;
-      sensor.config.formatMax = tempConfig.formatMax;
-      sensor.config.precision = tempConfig.precision;
-      sensor.config.min       = tempConfig.min;
-      sensor.config.max       = tempConfig.max;
+      strcpy(sensor.config.name,    tempConfig.name);
+      strcpy(sensor.config.format,  tempConfig.format);
+      sensor.config.formatMin     = tempConfig.formatMin;
+      sensor.config.formatMax     = tempConfig.formatMax;
+      sensor.config.precision     = tempConfig.precision;
+      sensor.config.min           = tempConfig.min;
+      sensor.config.max           = tempConfig.max;
     } else {
       Serial.println("  Config nicht erfolgreich ermittelt");
     }
