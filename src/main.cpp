@@ -773,13 +773,13 @@ boolean getSensorConfig(const SensorAddress address, SensorConfig &output) {
       // Und schreib bei Übereinstimmung die config-Werte aus der globalen config in den Sensor
       Serial.print("getSensorConfig(): Sensor gefunden: Adresse=");
       Serial.println(address);
-      strcpy(output.name, config.sensorConfig[i].config.name);
-      strcpy(output.format, config.sensorConfig[i].config.format);
-      output.formatMin = config.sensorConfig[i].config.formatMin;
-      output.formatMax = config.sensorConfig[i].config.formatMax;
-      output.precision = config.sensorConfig[i].config.precision;
-      output.min = config.sensorConfig[i].config.min;
-      output.max = config.sensorConfig[i].config.max;
+      strcpy( output.name,        config.sensorConfig[i].config.name);
+      strcpy( output.format,      config.sensorConfig[i].config.format);
+              output.formatMin  = config.sensorConfig[i].config.formatMin;
+              output.formatMax  = config.sensorConfig[i].config.formatMax;
+              output.precision  = config.sensorConfig[i].config.precision;
+              output.min        = config.sensorConfig[i].config.min;
+              output.max        = config.sensorConfig[i].config.max;
       return true;
     }
   }
@@ -986,13 +986,13 @@ void setup1Wire() {
     Serial.println("  Ermittle Config Sensor " + String(i));
     if (getSensorConfig(sensor.address, tempConfig) == true) {
       Serial.println("  Config erfolgreich ermittelt");
-      strcpy(sensor.config.name,    tempConfig.name);
-      strcpy(sensor.config.format,  tempConfig.format);
-      sensor.config.formatMin     = tempConfig.formatMin;
-      sensor.config.formatMax     = tempConfig.formatMax;
-      sensor.config.precision     = tempConfig.precision;
-      sensor.config.min           = tempConfig.min;
-      sensor.config.max           = tempConfig.max;
+      strcpy( sensor.config.name,         tempConfig.name);
+      strcpy( sensor.config.format,       tempConfig.format);
+              sensor.config.formatMin   = tempConfig.formatMin;
+              sensor.config.formatMax   = tempConfig.formatMax;
+              sensor.config.precision   = tempConfig.precision;
+              sensor.config.min         = tempConfig.min;
+              sensor.config.max         = tempConfig.max;
     } else {
       Serial.println("  Config nicht erfolgreich ermittelt");
     }
