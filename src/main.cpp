@@ -680,8 +680,8 @@ void addSensor(Sensor sensor) {
   Serial.print(sensor.address);
   Serial.println(" hinzu");
   strcpy(tempArray[sensors.count].address, sensor.address);
-  strcpy(tempArray[sensors.count].config.name, sensor.config.name);
   tempArray[sensors.count].type = sensor.type;
+  strcpy(tempArray[sensors.count].config.name, sensor.config.name);
   strcpy(tempArray[sensors.count].config.format, sensor.config.format);
   tempArray[sensors.count].config.formatMin = sensor.config.formatMin;
   tempArray[sensors.count].config.formatMax = sensor.config.formatMax;
@@ -938,6 +938,7 @@ void setup1Wire() {
   byte              addrArray[8];
   String            address;
   Sensor            sensor;
+  SensorConfig      tempConfig;
 
   Serial.println("setup1Wire() begin");
 
@@ -982,7 +983,19 @@ void setup1Wire() {
     Serial.println(sensor.type);
 
     // Ermittle die Konfig
-    getSensorConfig(sensor.address, sensor.config);
+    Serial.println("  Ermittle Config Sensor " + String(i));
+    if (getSensorConfig(sensor.address, tempConfig) == true) {
+      Serial.println("  Config erfolgreich ermittelt");
+      strcpy(tempConfig.name,   sensor.config.name);
+      strcpy(tempConfig.format, sensor.config.format);
+      sensor.config.formatMin = tempConfig.formatMin;
+      sensor.config.formatMax = tempConfig.formatMax;
+      sensor.config.precision = tempConfig.precision;
+      sensor.config.min       = tempConfig.min;
+      sensor.config.max       = tempConfig.max;
+    } else {
+      Serial.println("  Config nicht erfolgreich ermittelt");
+    }
 
     // Füg den Sensor der Liste hinzu
     addSensor(sensor);
