@@ -824,8 +824,11 @@ void setupDisplay() {
   pinMode(TFT_LED, OUTPUT);
   digitalWrite(TFT_LED, HIGH);
 
+  // Objekt initialisieren
   tft.begin();
   tft.setBitrate(24000000);
+  Serial.print("  Returncode: ");
+  Serial.println(tft.errorCode());
   tft.setTextColor(WHITE, BLACK);
   tft.setRotation(2); // Anschlusspins sind unten
   tft.setCursor(xBegin, yBegin);
@@ -833,7 +836,7 @@ void setupDisplay() {
   Serial.print(tft.height());
   Serial.print("  Breite: ");
   Serial.println(tft.width());
-  tft.println("Start");
+  tft.println("  Start");
   Serial.println("setupDisplay() end");
 }
 
@@ -1049,7 +1052,9 @@ String getValuesAsHtml() {
 void setup() {
   // Starte die serielle Kommunikation
   Serial.begin(9600);
-  delay(500);
+
+  // Warte 2 Sekunden, damit sich ein Gerät, das zB die serielle Ausgabe abfragen will, verbinden kann
+  delay(2000);
   Serial.println("setup() begin");
 
   // Eingebaute LED als Zustands-Indikator
