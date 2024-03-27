@@ -184,7 +184,7 @@ void setupMemory();
 void setupWifi();
 void setup();
 
-// ***************  Funktionen
+// ***************  Funktionen *********************
 char* urlDecode(const char* input) {
   // Decode URL-encoded data
   String decoded = "";
@@ -269,6 +269,8 @@ void copyConfig(const Config &from, Config &to) {
     strcpy(to.sensorConfig[i].address,    from.sensorConfig[i].address);  
     strcpy(to.sensorConfig[i].config.name,       from.sensorConfig[i].config.name);  
     strcpy(to.sensorConfig[i].config.format,     from.sensorConfig[i].config.format);  
+           to.sensorConfig[i].config.formatMin = from.sensorConfig[i].config.formatMin;
+           to.sensorConfig[i].config.formatMax = from.sensorConfig[i].config.formatMax;
            to.sensorConfig[i].config.precision = from.sensorConfig[i].config.precision;
            to.sensorConfig[i].config.min       = from.sensorConfig[i].config.min;
            to.sensorConfig[i].config.max       = from.sensorConfig[i].config.max;
@@ -419,17 +421,17 @@ void htmlGetConfig() {
   client.print("      <p>MQTT Benutzer: <input type='text' name='mqttUser' value='" + String(config.mqttUser) + "'></p>");
   client.print("      <p>MQTT Passwort: <input type='text' name='mqttPassword' value='" + String(config.mqttPassword) + "'></p>");
 
-  client.print("<p/>");
-  client.print("<table>");
-  client.print("<th></th>");
-  client.print("<th>Adresse</th>");
-  client.print("<th>Name</th>");
-  client.print("<th>Format</th>");
-  client.print("<th>FMin</th>");
-  client.print("<th>FMax</th>");
-  client.print("<th>Dezimalstellen</th>");
-  client.print("<th>Min</th>");
-  client.print("<th>Max</th>");
+  client.print("      <p/>");
+  client.print("      <table>");
+  client.print("        <th></th>");
+  client.print("        <th>Adresse</th>");
+  client.print("        <th>Name</th>");
+  client.print("        <th>Format</th>");
+  client.print("        <th>Anzeige Min</th>");
+  client.print("        <th>Anzeige Max</th>");
+  client.print("        <th>Dezimalstellen</th>");
+  client.print("        <th>Sensorwert Min</th>");
+  client.print("        <th>Sensorwert Max</th>");
   for (int i = 0; i < sensorConfigCount; i++) {
     client.print("        <tr>");  
     client.print("          <td>" + String(i) + "</td>");  
