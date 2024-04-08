@@ -133,6 +133,9 @@ Config config;
 
 // *************** Deklaration der Funktionen
 
+// Hilfs-Funktionen
+char* fillBlank(const char* input, const u_int length);
+
 // Zustands-Funktionen
 boolean sensorsFine();
 boolean wifiFine();
@@ -185,6 +188,17 @@ void setupWifi();
 void setup();
 
 // ***************  Funktionen *********************
+char* fillBlank(const char* input, const u_int length) {
+  static char result[255];
+  strcpy(result, input);
+  while (strlen(result) < length) {
+    strcat(result, " ");
+  }
+  return result;
+  
+}
+
+
 char* urlDecode(const char* input) {
   // Decode URL-encoded data
   String decoded = "";
@@ -1298,14 +1312,17 @@ void displayValues() {
 
   // Iteriere durch alle Sensoren
   for (int i = 0; i < sensors.count; i++) {
-    if (sensors.count <= 4) {
-      tft.setCursor(40, line+10);
-    } else {
-      tft.setCursor(70, line);
-    }
-
     // Formattiere den Wert entspr. dem Value String
     sensorValueToDisplay(sensors.sensorList[i], buffer);
+
+    if (sensors.count <= 4) {
+      tft.setCursor(40, line+10); // Bleiben noch 8 Zeichen
+      strcpy(buffer, fillBlank(buffer, 8));
+    } else {
+      tft.setCursor(70, line); // Bleiben noch 7 Zeichen
+      strcpy(buffer, fillBlank(buffer, 7));
+    }
+
     tft.println(buffer);
     line = line + lineheight;
   }
