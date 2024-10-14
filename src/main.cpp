@@ -1086,6 +1086,22 @@ void setup() {
   delay(2000);
   Serial.println("setup() begin");
 
+
+  //// LÖSCHMICH //////
+  Bonds bonds;
+  parseValuePairs("0=0;1=2;2=4", bonds);
+  Serial.print("bonds: ");
+  Serial.println(bonds.count);
+
+  for (uint8_t j = 0; j < bonds.count; j++) {
+    Serial.print("bond ");
+    Serial.print(j);
+    Serial.print(": ");
+    Serial.print(bonds.bond[j].sensorValue);
+    Serial.print("=");
+    Serial.println(bonds.bond[j].displayValue);
+  }
+
   // Eingebaute LED als Zustands-Indikator
   pinMode(LED_BUILTIN, OUTPUT);
 

@@ -9,7 +9,7 @@ typedef float SensorValueMin;
 typedef float SensorValueMax;
 typedef float SensorValueFormatMin;
 typedef float SensorValueFormatMax;
-typedef char  SensorValueBonds        [50];
+typedef char  SensorValueBonds        [60];
 
 typedef enum {
 	T_DS18B20 = 't',
@@ -46,6 +46,16 @@ struct Sensor {
 struct Sensors {
   Sensor*               sensorList      = nullptr;    // Zeiger auf das Array von SensorData
   int                   count           = 0;          // Aktuelle Anzahl von Sensoren
+};
+
+struct Bond {
+  float sensorValue;
+  float displayValue;
+};
+
+struct Bonds {
+  Bond bond[20];
+  int  count = 0;
 };
 
 
@@ -90,8 +100,49 @@ bool strToDeviceAddress(const String &str, DeviceAddress &addr);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &sensorType);
 void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
 void sensorValueToDisplay(const Sensor sensor, char displayValue[30]);
+void parseValuePairs(const char* input, Bonds pairs);
 
 // ***************  Funktionen
+void parseValuePairs(const char* input, Bonds pairs) {
+  const char* current = input;
+  const char* semicolonPos;
+  pairs.count = 0;
+
+  while ((semicolonPos = strchr(current, ';')) != nullptr) {
+    if (pairs.count >= 20) break;
+
+    // Temporäre Zeichenkette für das aktuelle Paar
+    int length = semicolonPos - current;
+    char temp[length + 1];
+    strncpy(temp, current, length);
+    temp[length] = '\0';  // Null-terminieren
+
+    // Splitte bei '='
+    char* equalsPos = strchr(temp, '=');
+    if (equalsPos != nullptr) {
+      *equalsPos = '\0';  // Trenne den Wert und die Anzeige
+      pairs.bond[pairs.count].sensorValue =  atof(temp);
+      pairs.bond[pairs.count].displayValue = atof(equalsPos + 1);
+      pairs.count++;
+    }
+
+    current = semicolonPos + 1;  // Weiter zum nächsten Paar
+  }
+
+  // Verarbeitung des letzten Paares (ohne Semikolon)
+  if (*current != '\0' && pairs.count < 20) {
+    char* equalsPos = strchr(current, '=');
+    if (equalsPos != nullptr) {
+      *equalsPos = '\0';
+      pairs.bond[pairs.count].sensorValue = atof(current);
+      pairs.bond[pairs.count].displayValue = atof(equalsPos + 1);
+      pairs.count++;
+    }
+  }
+}
+
+
+
 void sensorValueToDisplay(const Sensor sensor, char displayValue[30]) {
     char stringBuffer[30] = "";
   float calcedValue = -1;
