@@ -30,7 +30,7 @@ loop()
 #include <DS2438.h>
 #include "sensors.h"
 
-// #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
+#define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
 
 // *************** Konfig-Grundeinstellungen
 const int sensorConfigCount = 10;  // Gibt fan, wie viele Sensoren konfiguriert und gespeichert werden können
@@ -149,7 +149,7 @@ void printConfig(Config &pconfig);
 void copyConfig(const Config &from, Config &to);
 
 // Sensorlisten-Funktionen
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value);
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max/*, const SensorValueBonds bonds*/, float value); 
 void addSensor(Sensor sensor);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
@@ -288,6 +288,7 @@ void copyConfig(const Config &from, Config &to) {
            to.sensorConfig[i].config.precision = from.sensorConfig[i].config.precision;
            to.sensorConfig[i].config.min       = from.sensorConfig[i].config.min;
            to.sensorConfig[i].config.max       = from.sensorConfig[i].config.max;
+    strcpy(to.sensorConfig[i].config.bonds,      from.sensorConfig[i].config.bonds);
   }
   Serial.println("copyConfig() end");
 };
@@ -343,6 +344,8 @@ void printConfig(Config &pconfig) {
     Serial.print(pconfig.sensorConfig[i].config.min);  
     Serial.print(" Max: ");  
     Serial.println(pconfig.sensorConfig[i].config.max);  
+    Serial.print(" Bonds:");
+    Serial.println(pconfig.sensorConfig[i].config.bonds);  
   }
 
   Serial.println("printConfig() end");
@@ -446,6 +449,7 @@ void htmlGetConfig() {
   client.print("        <th>Dezimalstellen</th>");
   client.print("        <th>Sensorwert Min</th>");
   client.print("        <th>Sensorwert Max</th>");
+  client.print("        <th>Sensorwert Bonds</th>");
   for (int i = 0; i < sensorConfigCount; i++) {
     client.print("        <tr>");  
     client.print("          <td>" + String(i) + "</td>");  
@@ -457,6 +461,7 @@ void htmlGetConfig() {
     client.print("          <td><input type='text' name='sensorValuePrecision" + String(i) + "' value='" + String(config.sensorConfig[i].config.precision) + "'></td>");  
     client.print("          <td><input type='text' name='sensorValueMin"       + String(i) + "' value='" + String(config.sensorConfig[i].config.min)       + "'></td>");  
     client.print("          <td><input type='text' name='sensorValueMax"       + String(i) + "' value='" + String(config.sensorConfig[i].config.max)       + "'></td>");  
+    client.print("          <td><input type='text' name='sensorValueBonds"     + String(i) + "' value='" + String(config.sensorConfig[i].config.bonds)     + "'></td>");  
     client.print("        </tr>");  
   }
   client.print("      </table>");
@@ -542,6 +547,10 @@ void htmlSetConfig() {
     strcpy(name, "sensorValueMax");
     strcat(name, no);
     config.sensorConfig[i].config.max = atof(getValue(body, name)); // Umwandlung nach Float
+
+    strcpy(name, "sensorValueBonds");
+    strcat(name, no);
+    strcpy(config.sensorConfig[i].config.bonds, getValue(body, name));
   }
 
   saveConfig();
@@ -721,7 +730,7 @@ void addSensor(Sensor sensor) {
 }
 
 [[deprecated("Diese Funktion wird eigentlich nicht mehr gebraucht, da es eine Version gibt, die eine Sensor-Struct annimmt")]]
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value) {
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max /*, const SensorValueBonds bonds*/ , float value) {
   Sensor*   tempArray = (Sensor*)malloc((sensors.count + 1) * sizeof(Sensor));
   DeviceAddress tempDs2438DeviceAddress;
 
@@ -745,6 +754,7 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   tempArray[sensors.count].config.min = min;
   tempArray[sensors.count].config.max = max;
   tempArray[sensors.count].config.precision = precision;
+  //strcpy(tempArray[sensors.count].config.bonds, bonds);
   tempArray[sensors.count].value = value;
   strToDeviceAddress(String(address), tempDs2438DeviceAddress);
   copyDeviceAddress(tempDs2438DeviceAddress, tempArray[sensors.count].deviceAddress);
@@ -796,6 +806,7 @@ boolean getSensorConfig(const SensorAddress address, SensorConfig &output) {
               output.precision  = config.sensorConfig[i].config.precision;
               output.min        = config.sensorConfig[i].config.min;
               output.max        = config.sensorConfig[i].config.max;
+      strcpy( output.bonds,       config.sensorConfig[i].config.bonds);
       return true;
     }
   }
@@ -1012,6 +1023,7 @@ void setup1Wire() {
               sensor.config.precision   = tempConfig.precision;
               sensor.config.min         = tempConfig.min;
               sensor.config.max         = tempConfig.max;
+      strcpy( sensor.config.bonds,        tempConfig.bonds);
     } else {
       Serial.println("  Config nicht erfolgreich ermittelt");
     }
@@ -1025,10 +1037,10 @@ void setup1Wire() {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
       tft.println("Dryrun, erzeuge Dummy-Geraete");
       dummySensors = true;
-      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1, 23);
-      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1, 40);
-      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 120, 0,  0, 100, 25);
-      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 100, 0,  0,   2, 1.5);
+      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1,  23);
+      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1,  40);
+      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 120, 0,  0, 100,  25);
+      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 100, 0,  0,   2,  1.5);
     }
   #endif
 

@@ -9,6 +9,7 @@ typedef float SensorValueMin;
 typedef float SensorValueMax;
 typedef float SensorValueFormatMin;
 typedef float SensorValueFormatMax;
+typedef char  SensorValueBonds        [50];
 
 typedef enum {
 	T_DS18B20 = 't',
@@ -25,7 +26,8 @@ struct SensorConfig {
   SensorValueFormatMax  formatMax       = -1;        // Maximum des Anzeige-Wertes
   SensorValuePrecision  precision       = 0;         // Dezimalstellen des Wertes
   SensorValueMin        min             = -1;        // Minimum des Messwertes 
-  SensorValueMax        max             = -1;        // Minimum des Messwertes
+  SensorValueMax        max             = -1;        // Maximum des Messwertes
+  SensorValueBonds      bonds           = "";
 };
 
 struct PersistantSensorConfig {
@@ -68,9 +70,15 @@ struct Sensors {
    Haben wir nun z.B. einen Wassertank, der 120l fasst, können wir auch vom Prozent-Wert auf den anteiligen Wert umrechnen lassen.
    Beispiel:
    Wir messen 0 bis 3 und wollen das als Füllstand von 0 bis 120 l anzeigen.
-   min = 0 / max = 3 / formatMin = 0 / fformatMax = 120 / format = "%s l"   (Implizit: precision = 0)
+   min = 0 / max = 3 / formatMin = 0 / formatMax = 120 / format = "%s l"   (Implizit: precision = 0)
    Bei einem Messwert von 1,5 wird nun "60 l" angezeigt
 
+  * Nicht-lineare Anzeige
+  Hat der Wassertank nun keine parallelen Wände, sondern ist z.B. konisch oder mit stufen aufgebaut, können wir nicht linear rechnen.
+  Daher nutzen wir hier ein array von Zuweisungen zwischen dem Mess- und dem Anzeigewert.
+  Beispiel:
+  Wir messen 0 bis 10, wollen als Füllstand 0 bis 200 l anzeigen, wobei 100 l schon bei einem Messwert von 2 erreicht sind.
+  bonds = "0=0;1=50;2=100;10=200" / format = "%s l" (Implizit: precision = 0)
 */
 
 // *************** Deklaration der Funktionen
@@ -81,7 +89,7 @@ const char* deviceAddressToChar(DeviceAddress addr);
 bool strToDeviceAddress(const String &str, DeviceAddress &addr);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &sensorType);
 void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
-void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]);
+void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, char displayValue[30]);
 void sensorValueToDisplay(const Sensor sensor, char displayValue[30]);
 
 // ***************  Funktionen
@@ -124,7 +132,7 @@ void sensorValueToDisplay(const Sensor sensor, char displayValue[30]) {
 }
 
 [[deprecated("Diese Funktion wird eigentlich nicht mehr gebraucht, da es eine Version gibt, die eine Sensor-Struct annimmt")]]
-void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]) {
+void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, char displayValue[30]) {
   char stringBuffer[30] = "";
   float calcedValue = -1;
   Serial.println("sensorValueToDisplay() begin");
