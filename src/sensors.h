@@ -89,7 +89,6 @@ const char* deviceAddressToChar(DeviceAddress addr);
 bool strToDeviceAddress(const String &str, DeviceAddress &addr);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &sensorType);
 void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
-void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, char displayValue[30]);
 void sensorValueToDisplay(const Sensor sensor, char displayValue[30]);
 
 // ***************  Funktionen
@@ -126,45 +125,6 @@ void sensorValueToDisplay(const Sensor sensor, char displayValue[30]) {
   Serial.print("  stringBuffer: ");
   Serial.println(stringBuffer);
   sprintf(displayValue, sensor.config.format, stringBuffer);
-  Serial.print("  displayValue: ");
-  Serial.println(displayValue);
-  Serial.println("sensorValueToDisplay() end");
-}
-
-[[deprecated("Diese Funktion wird eigentlich nicht mehr gebraucht, da es eine Version gibt, die eine Sensor-Struct annimmt")]]
-void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, char displayValue[30]) {
-  char stringBuffer[30] = "";
-  float calcedValue = -1;
-  Serial.println("sensorValueToDisplay() begin");
-
-  // Wenn min oder max nicht gesetzt sind
-  if (min < 0 || max < 0) {
-    // Erfolgt keine Umrechnung, sondern die Übernahme des float Wertes
-    Serial.println("  Keine Umrechnung, direkte Anzeige");
-    calcedValue = sensorValue;
-  } else {
-    // Plausi-Prüfung
-    if (sensorValue >= min && sensorValue <= max && max > min) {
-      if (formatMin < 0 || formatMax < 0) {
-        Serial.println("  Umrechnung in Prozentwert");
-        calcedValue = (sensorValue - min) / (max - min) * 100;
-      } else {
-        Serial.println("  Umrechnung in anteiligen Wert");
-        calcedValue = ((formatMax - formatMin) * (sensorValue - min) / (max - min)) + formatMin;
-      }
-    } else {
-      Serial.println("  Umrechnung nicht möglich");
-      calcedValue = sensorValue;
-    }
-  }
-  Serial.print("  dtostrf: calcedValue=");
-  Serial.print(calcedValue);
-  Serial.print(" precision=");
-  Serial.print(precision);
-  dtostrf(calcedValue, 0, precision, stringBuffer);
-  Serial.print("  stringBuffer: ");
-  Serial.println(stringBuffer);
-  sprintf(displayValue, formatString, stringBuffer);
   Serial.print("  displayValue: ");
   Serial.println(displayValue);
   Serial.println("sensorValueToDisplay() end");

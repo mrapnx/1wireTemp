@@ -149,7 +149,7 @@ void printConfig(Config &pconfig);
 void copyConfig(const Config &from, Config &to);
 
 // Sensorlisten-Funktionen
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max/*, const SensorValueBonds bonds*/, float value); 
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, float value); 
 void addSensor(Sensor sensor);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
@@ -704,18 +704,19 @@ void addSensor(Sensor sensor) {
   Serial.print("  Füge Sensor ");
   Serial.print(sensor.address);
   Serial.println(" hinzu");
-  strcpy(tempArray[sensors.count].address, sensor.address);
-  tempArray[sensors.count].type = sensor.type;
-  strcpy(tempArray[sensors.count].config.name, sensor.config.name);
-  strcpy(tempArray[sensors.count].config.format, sensor.config.format);
-  tempArray[sensors.count].config.formatMin = sensor.config.formatMin;
-  tempArray[sensors.count].config.formatMax = sensor.config.formatMax;
-  tempArray[sensors.count].config.precision = sensor.config.precision;
-  tempArray[sensors.count].config.min = sensor.config.min;
-  tempArray[sensors.count].config.max = sensor.config.max;
-  tempArray[sensors.count].value = sensor.value;
-  strToDeviceAddress(String(sensor.address), tempDs2438DeviceAddress);
-  copyDeviceAddress(tempDs2438DeviceAddress, tempArray[sensors.count].deviceAddress);
+  strcpy(tempArray[sensors.count].address,        sensor.address);
+  tempArray[sensors.count].type =                 sensor.type;
+  strcpy(tempArray[sensors.count].config.name,    sensor.config.name);
+  strcpy(tempArray[sensors.count].config.format,  sensor.config.format);
+  tempArray[sensors.count].config.formatMin =     sensor.config.formatMin;
+  tempArray[sensors.count].config.formatMax =     sensor.config.formatMax;
+  tempArray[sensors.count].config.precision =     sensor.config.precision;
+  tempArray[sensors.count].config.min =           sensor.config.min;
+  tempArray[sensors.count].config.max =           sensor.config.max;
+  strcpy(tempArray[sensors.count].config.bonds,   sensor.config.bonds);
+  tempArray[sensors.count].value =                sensor.value;
+  strToDeviceAddress(String(sensor.address),      tempDs2438DeviceAddress);
+  copyDeviceAddress(tempDs2438DeviceAddress,      tempArray[sensors.count].deviceAddress);
 
   // Erhöhe die Anzahl der Sensoren
   sensors.count++;
@@ -730,7 +731,7 @@ void addSensor(Sensor sensor) {
 }
 
 [[deprecated("Diese Funktion wird eigentlich nicht mehr gebraucht, da es eine Version gibt, die eine Sensor-Struct annimmt")]]
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max /*, const SensorValueBonds bonds*/ , float value) {
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, float value) {
   Sensor*   tempArray = (Sensor*)malloc((sensors.count + 1) * sizeof(Sensor));
   DeviceAddress tempDs2438DeviceAddress;
 
@@ -745,19 +746,19 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   Serial.print("  Füge Sensor ");
   Serial.print(address);
   Serial.println(" hinzu");
-  strcpy(tempArray[sensors.count].address, address);
-  strcpy(tempArray[sensors.count].config.name, name);
-  tempArray[sensors.count].type = type;
-  strcpy(tempArray[sensors.count].config.format, format);
-  tempArray[sensors.count].config.formatMin = formatMin;
-  tempArray[sensors.count].config.formatMax = formatMax;
-  tempArray[sensors.count].config.min = min;
-  tempArray[sensors.count].config.max = max;
-  tempArray[sensors.count].config.precision = precision;
-  //strcpy(tempArray[sensors.count].config.bonds, bonds);
-  tempArray[sensors.count].value = value;
-  strToDeviceAddress(String(address), tempDs2438DeviceAddress);
-  copyDeviceAddress(tempDs2438DeviceAddress, tempArray[sensors.count].deviceAddress);
+  strcpy(tempArray[sensors.count].address,        address);
+  strcpy(tempArray[sensors.count].config.name,    name);
+  tempArray[sensors.count].type =                 type;
+  strcpy(tempArray[sensors.count].config.format,  format);
+  tempArray[sensors.count].config.formatMin =     formatMin;
+  tempArray[sensors.count].config.formatMax =     formatMax;
+  tempArray[sensors.count].config.min =           min;
+  tempArray[sensors.count].config.max =           max;
+  tempArray[sensors.count].config.precision =     precision;
+  strcpy(tempArray[sensors.count].config.bonds,   bonds);
+  tempArray[sensors.count].value =                value;
+  strToDeviceAddress(String(address),             tempDs2438DeviceAddress);
+  copyDeviceAddress(tempDs2438DeviceAddress,      tempArray[sensors.count].deviceAddress);
 
   // Erhöhe die Anzahl der Sensoren
   sensors.count++;
@@ -1037,10 +1038,10 @@ void setup1Wire() {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
       tft.println("Dryrun, erzeuge Dummy-Geraete");
       dummySensors = true;
-      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1,  23);
-      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1,  40);
-      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 120, 0,  0, 100,  25);
-      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 100, 0,  0,   2,  1.5);
+      addSensor("28EE3F8C251601", "Dmy Tmp 1", T_DS18B20, "%2s C", -1,  -1, 0, -1,  -1, "",            23);
+      addSensor("28FF3F8C251601", "Dmy Tmp 2", T_DS18B20, "%2s C", -1,  -1, 0, -1,  -1, "",            40);
+      addSensor("33EB3F8C251601", "Dmy Lvl 1", T_DS2438,  "%2s %%", 0, 120, 0,  0, 100, "0=0;100=120", 25);
+      addSensor("33EA3F8C251601", "Dmy Lvl 2", T_DS2438,  "%2s %%", 0, 100, 0,  0,   2, "0=0;100=2",   1.5);
     }
   #endif
 
