@@ -1025,10 +1025,10 @@ void setup1Wire() {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
       tft.println("Dryrun, erzeuge Dummy-Geraete");
       dummySensors = true;
-      addSensor("28EE3F8C251601", "Dmy Tmp 1", 't', "%2s C", -1,  -1, 0, -1,  -1, 23);
-      addSensor("28FF3F8C251601", "Dmy Tmp 2", 't', "%2s C", -1,  -1, 0, -1,  -1, 40);
-      addSensor("33EB3F8C251601", "Dmy Lvl 1", 'b', "%2s %%", 0, 120, 0,  0, 100, 25);
-      addSensor("33EA3F8C251601", "Dmy Lvl 2", 'b', "%2s %%", 0, 100, 0,  0,   2, 1.5);
+      addSensor("28EE3F8C251601", "Dmy Tmp 1", T_DS18B20, "%2s C", -1,  -1, 0, -1,  -1, 23);
+      addSensor("28FF3F8C251601", "Dmy Tmp 2", T_DS18B20, "%2s C", -1,  -1, 0, -1,  -1, 40);
+      addSensor("33EB3F8C251601", "Dmy Lvl 1", T_DS2438,  "%2s %%", 0, 120, 0,  0, 100, 25);
+      addSensor("33EA3F8C251601", "Dmy Lvl 2", T_DS2438,  "%2s %%", 0, 100, 0,  0,   2, 1.5);
     }
   #endif
 
