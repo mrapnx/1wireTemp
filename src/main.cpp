@@ -16,8 +16,7 @@ loop()
 6. Per sensorValueToDisplay() wird nun der Wert mit Hilfe der Config im Sensor in einen C-String konvertiert
 
 */
-
-#include <Arduino.h>
+#include "Arduino.h"
 #include <avr/dtostrf.h>
 #include <Wire.h>
 #include <WiFiNINA.h>
@@ -1089,7 +1088,7 @@ void setup() {
 
   //// LÖSCHMICH //////
   Bonds bonds;
-  parseValuePairs("0=0;1=2;2=4", bonds);
+  //parseValuePairs("0=0;1=2;2=4", bonds);
   Serial.print("bonds: ");
   Serial.println(bonds.count);
 
