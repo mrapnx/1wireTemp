@@ -1,6 +1,8 @@
 1-Wire Busmaster, der die Temperaturen (und Füllstände) angeschlossener 1-Wire Sensoren abfragt und auf einem Display anzeigt sowie per WiFi an einen MQTT Host überträgt.
 Durch geringen Stromverbrauch ideal fürs Wohnmobil geeignet.
 
+<img width="1572" height="876" alt="grafik" src="https://github.com/user-attachments/assets/093f617e-85d0-4e78-815d-8d39a0f4f616" />
+
 # Hardware
 ## Busmaster mit Display
 + Arduino Nano 33 IoT
