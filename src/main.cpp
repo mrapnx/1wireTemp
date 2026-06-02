@@ -149,7 +149,7 @@ void printConfig(Config &pconfig);
 void copyConfig(const Config &from, Config &to);
 
 // Sensorlisten-Funktionen
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorCategory category, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, float value); 
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorCategory category, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value); 
 void addSensor(Sensor sensor);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
@@ -707,7 +707,6 @@ void addSensor(Sensor sensor) {
   tempArray[sensors.count].config.precision =     sensor.config.precision;
   tempArray[sensors.count].config.min =           sensor.config.min;
   tempArray[sensors.count].config.max =           sensor.config.max;
-  strcpy(tempArray[sensors.count].config.bonds,   sensor.config.bonds);
   tempArray[sensors.count].value =                sensor.value;
   strToDeviceAddress(String(sensor.address),      tempDs2438DeviceAddress);
   copyDeviceAddress(tempDs2438DeviceAddress,      tempArray[sensors.count].deviceAddress);
@@ -725,7 +724,7 @@ void addSensor(Sensor sensor) {
 }
 
 [[deprecated("Diese Funktion wird eigentlich nicht mehr gebraucht, da es eine Version gibt, die eine Sensor-Struct annimmt")]]
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorCategory category, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, float value) {
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorCategory category, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value) {
   Sensor*   tempArray = (Sensor*)malloc((sensors.count + 1) * sizeof(Sensor));
   DeviceAddress tempDs2438DeviceAddress;
 
@@ -750,7 +749,6 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   tempArray[sensors.count].config.min =           min;
   tempArray[sensors.count].config.max =           max;
   tempArray[sensors.count].config.precision =     precision;
-  strcpy(tempArray[sensors.count].config.bonds,   bonds);
   tempArray[sensors.count].value =                value;
   strToDeviceAddress(String(address),             tempDs2438DeviceAddress);
   copyDeviceAddress(tempDs2438DeviceAddress,      tempArray[sensors.count].deviceAddress);
