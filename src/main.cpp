@@ -949,6 +949,11 @@ void updateTemperatures() {
       // Aktualisiere die Liste
       if (!dummySensors) {
         updateSensorValue(sensors.sensorList[i].address, dallasSensors.getTempC(sensors.sensorList[i].deviceAddress));
+        if (sensors.sensorList[i].value == DEVICE_DISCONNECTED_C) {
+          Serial.print("    Fehler beim Ermitteln der Temperatur für Gerät ");
+          Serial.print(sensors.sensorList[i].address);
+          Serial.println(": Gerät nicht verbunden");
+        }
       } else {
         updateSensorValue(sensors.sensorList[i].address, random(15,25));
       }
@@ -982,6 +987,13 @@ void setup1Wire() {
   Serial.println("  Gefundene 1-Wire-Sensoren:");
   tft.println("Gefundene 1-Wire-Sensoren:");
   printSensorAddresses();
+
+  Serial.print("Parasitärspeisung ist: ");
+  if (dallasSensors.isParasitePowerMode()) {
+      Serial.println("ON");
+  } else {
+      Serial.println("OFF");
+  }
 
   // Iteriere durch alle Sensoren
   for (int i = 0; i < dallasSensors.getDeviceCount(); i++) {
