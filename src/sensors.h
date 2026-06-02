@@ -10,13 +10,30 @@ typedef float SensorValueMax;
 typedef float SensorValueFormatMin;
 typedef float SensorValueFormatMax;
 
+
 typedef enum {
-	T_DS18B20 = 't',
-  T_DS18S20 = 't',
-  T_DS1822  = 't',
-  T_DS2438  = 'b',
-  T_UNKNOWN = 'u'
+	T_DS18B20,
+  T_DS18S20,
+  T_DS1822,
+  T_DS2438,
+  T_UNKNOWN
 } SensorType;
+
+const char* typeNames[] = {
+	"DS18B20",
+  "DS18S20",
+  "DS1822",
+  "DS2438",
+  "UNKNOWN"  
+};
+
+typedef enum {
+	C_DS18B20 = 't',
+  C_DS18S20 = 't',
+  C_DS1822  = 't',
+  C_DS2438  = 'b',
+  C_UNKNOWN = 'u'
+} SensorCategory;
 
 struct SensorConfig {
   SensorName            name            = "";        // Name zur Anzeige
@@ -36,7 +53,8 @@ struct PersistantSensorConfig {
 struct Sensor {
   SensorAddress         address         = "";         // Adresse des Sensors userfriendly
   DeviceAddress         deviceAddress;                // Adresse des Sensors als HEX
-  SensorType            type            = T_UNKNOWN;  // Typ, derzeit werden nur t, b und u unterstützt
+  SensorCategory        category        = C_UNKNOWN;  // Kategorie, derzeit werden nur t, b und u unterstützt
+  SensorType            type            = T_UNKNOWN;  // Typ gemäß Dallas/Maxim
   SensorConfig          config;
   float                 value;
 };
@@ -79,6 +97,7 @@ String deviceAddressToStr(DeviceAddress addr);
 void deviceAddressToStrNew(const DeviceAddress addr, String out);
 const char* deviceAddressToChar(DeviceAddress addr); 
 bool strToDeviceAddress(const String &str, DeviceAddress &addr);
+bool getSensorCategoryByAddress(const SensorAddress manufacturerCode, SensorCategory &sensorCategory);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &sensorType);
 void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
 void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]);
@@ -202,7 +221,6 @@ bool strToDeviceAddress(const String &str, DeviceAddress &addr) {
   return true; // Konvertierung erfolgreich
 }
 
-
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &sensorType) {
   char code[17];
   byte firstByte;
@@ -225,6 +243,32 @@ bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &se
       return true;
     default:
       sensorType = T_UNKNOWN;
+      return false;
+    }
+}
+
+bool getSensorCategoryByAddress(const SensorAddress manufacturerCode, SensorCategory &sensorCategory) {
+  char code[17];
+  byte firstByte;
+  // Überprüfe nur das erste Byte des char-Arrays
+  strcpy(code, manufacturerCode);
+  firstByte = convertHexCStringToByte(code);
+
+  switch (firstByte) {
+    case 0x28:
+      sensorCategory = C_DS18B20; // DS18B20 Temperatursensor
+      return true;
+    case 0x10:
+      sensorCategory = C_DS18S20; // DS18S20 Temperatursensor
+      return true;
+    case 0x22:
+      sensorCategory = C_DS1822; // DS1822 Temperatursensor
+      return true;
+    case 0x26:
+      sensorCategory = C_DS2438; // DS2438 (Smart Battery Monitor)
+      return true;
+    default:
+      sensorCategory = C_UNKNOWN;
       return false;
     }
 }

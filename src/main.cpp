@@ -30,7 +30,7 @@ loop()
 #include <DS2438.h>
 #include "sensors.h"
 
-// #define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
+//#define DRYRUN // Erzeugt Dummy-Sensoren, wenn keine echten angeschlossen sind
 
 // *************** Konfig-Grundeinstellungen
 const int sensorConfigCount = 10;  // Gibt fan, wie viele Sensoren konfiguriert und gespeichert werden können
@@ -149,12 +149,12 @@ void printConfig(Config &pconfig);
 void copyConfig(const Config &from, Config &to);
 
 // Sensorlisten-Funktionen
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value);
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorCategory category, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, float value); 
 void addSensor(Sensor sensor);
 void removeSensor(SensorAddress address);
 boolean updateSensorValue(const SensorAddress address, const float value);
 void clearSensorList();
-boolean getSensorType(const SensorAddress address, SensorType& type);
+boolean getSensorCategory(const SensorAddress address, SensorCategory& category);
 boolean getSensorConfig(const SensorAddress address, SensorConfig &output);
 
 // Ein- & Ausgabe-Funktionen
@@ -675,6 +675,8 @@ void printSensors() {
     Serial.print(sensors.sensorList[i].config.name);
     Serial.print(" Typ: ");
     Serial.print(sensors.sensorList[i].type);
+    Serial.print(" Kategorie: ");
+    Serial.print(sensors.sensorList[i].category);    
     Serial.print(" Wert: ");
     Serial.println(sensors.sensorList[i].value);
   }
@@ -695,18 +697,20 @@ void addSensor(Sensor sensor) {
   Serial.print("  Füge Sensor ");
   Serial.print(sensor.address);
   Serial.println(" hinzu");
-  strcpy(tempArray[sensors.count].address, sensor.address);
-  tempArray[sensors.count].type = sensor.type;
-  strcpy(tempArray[sensors.count].config.name, sensor.config.name);
-  strcpy(tempArray[sensors.count].config.format, sensor.config.format);
-  tempArray[sensors.count].config.formatMin = sensor.config.formatMin;
-  tempArray[sensors.count].config.formatMax = sensor.config.formatMax;
-  tempArray[sensors.count].config.precision = sensor.config.precision;
-  tempArray[sensors.count].config.min = sensor.config.min;
-  tempArray[sensors.count].config.max = sensor.config.max;
-  tempArray[sensors.count].value = sensor.value;
-  strToDeviceAddress(String(sensor.address), tempDs2438DeviceAddress);
-  copyDeviceAddress(tempDs2438DeviceAddress, tempArray[sensors.count].deviceAddress);
+  strcpy(tempArray[sensors.count].address,        sensor.address);
+  tempArray[sensors.count].category =             sensor.category;
+  tempArray[sensors.count].type =                 sensor.type;
+  strcpy(tempArray[sensors.count].config.name,    sensor.config.name);
+  strcpy(tempArray[sensors.count].config.format,  sensor.config.format);
+  tempArray[sensors.count].config.formatMin =     sensor.config.formatMin;
+  tempArray[sensors.count].config.formatMax =     sensor.config.formatMax;
+  tempArray[sensors.count].config.precision =     sensor.config.precision;
+  tempArray[sensors.count].config.min =           sensor.config.min;
+  tempArray[sensors.count].config.max =           sensor.config.max;
+  strcpy(tempArray[sensors.count].config.bonds,   sensor.config.bonds);
+  tempArray[sensors.count].value =                sensor.value;
+  strToDeviceAddress(String(sensor.address),      tempDs2438DeviceAddress);
+  copyDeviceAddress(tempDs2438DeviceAddress,      tempArray[sensors.count].deviceAddress);
 
   // Erhöhe die Anzahl der Sensoren
   sensors.count++;
@@ -721,7 +725,7 @@ void addSensor(Sensor sensor) {
 }
 
 [[deprecated("Diese Funktion wird eigentlich nicht mehr gebraucht, da es eine Version gibt, die eine Sensor-Struct annimmt")]]
-void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, float value) {
+void addSensor(const SensorAddress address, const SensorName name, const SensorType type, const SensorCategory category, const SensorValueFormat format, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, const SensorValueBonds bonds, float value) {
   Sensor*   tempArray = (Sensor*)malloc((sensors.count + 1) * sizeof(Sensor));
   DeviceAddress tempDs2438DeviceAddress;
 
@@ -736,18 +740,20 @@ void addSensor(const SensorAddress address, const SensorName name, const SensorT
   Serial.print("  Füge Sensor ");
   Serial.print(address);
   Serial.println(" hinzu");
-  strcpy(tempArray[sensors.count].address, address);
-  strcpy(tempArray[sensors.count].config.name, name);
-  tempArray[sensors.count].type = type;
-  strcpy(tempArray[sensors.count].config.format, format);
-  tempArray[sensors.count].config.formatMin = formatMin;
-  tempArray[sensors.count].config.formatMax = formatMax;
-  tempArray[sensors.count].config.min = min;
-  tempArray[sensors.count].config.max = max;
-  tempArray[sensors.count].config.precision = precision;
-  tempArray[sensors.count].value = value;
-  strToDeviceAddress(String(address), tempDs2438DeviceAddress);
-  copyDeviceAddress(tempDs2438DeviceAddress, tempArray[sensors.count].deviceAddress);
+  strcpy(tempArray[sensors.count].address,        address);
+  strcpy(tempArray[sensors.count].config.name,    name);
+  tempArray[sensors.count].category =             category;
+  tempArray[sensors.count].type =                 type;
+  strcpy(tempArray[sensors.count].config.format,  format);
+  tempArray[sensors.count].config.formatMin =     formatMin;
+  tempArray[sensors.count].config.formatMax =     formatMax;
+  tempArray[sensors.count].config.min =           min;
+  tempArray[sensors.count].config.max =           max;
+  tempArray[sensors.count].config.precision =     precision;
+  strcpy(tempArray[sensors.count].config.bonds,   bonds);
+  tempArray[sensors.count].value =                value;
+  strToDeviceAddress(String(address),             tempDs2438DeviceAddress);
+  copyDeviceAddress(tempDs2438DeviceAddress,      tempArray[sensors.count].deviceAddress);
 
   // Erhöhe die Anzahl der Sensoren
   sensors.count++;
@@ -771,10 +777,10 @@ boolean updateSensorValue(const SensorAddress address, const float value) {
    return false;
 }
 
-boolean getSensorType(const SensorAddress address, SensorType& type) {
+boolean getSensorCategory(const SensorAddress address, SensorCategory& category) {
    for (int i = 0; i < sensors.count; i++) {
      if (strcmp(sensors.sensorList[i].address, address) == 0) {
-       type = sensors.sensorList[i].type;
+       category = sensors.sensorList[i].category;
        return true; 
      }
    }
@@ -894,7 +900,7 @@ void updateLevels() {
   levelCheckLast = millis();
 
   for (int i = 0; i < sensors.count; i++) {
-    if (sensors.sensorList[i].type == 'b') {
+    if (sensors.sensorList[i].category == 'b') {
       DS2438 ds2438(&oneWire, sensors.sensorList[i].deviceAddress);
       ds2438.begin();
       Serial.print("  Sensor DS2438 ");
@@ -941,7 +947,7 @@ void updateTemperatures() {
 
   // Iteriere durch alle Sensoren
   for (int i = 0; i < sensors.count; i++) {
-    if (sensors.sensorList[i].type == 't') {
+    if (sensors.sensorList[i].category == 't') {
       // Aktualisiere die Liste
       if (!dummySensors) {
         updateSensorValue(sensors.sensorList[i].address, dallasSensors.getTempC(sensors.sensorList[i].deviceAddress));
@@ -990,7 +996,7 @@ void setup1Wire() {
     Serial.println("  address: " + address);
     Serial.print("  addressC: ");
     Serial.println(sensor.address);
-    
+
     // Ermittle den Typ
     Serial.println("  Ermittle Typ Sensor " + String(i));
     if (getSensorTypeByAddress(sensor.address, sensor.type) == true) {
@@ -999,7 +1005,17 @@ void setup1Wire() {
       Serial.println("  Typ nicht erfolgreich ermittelt");
     }
     Serial.print("  Typ Sensor " + String(i) + ": ");
-    Serial.println(sensor.type);
+    Serial.println(typeNames[sensor.type]);    
+    
+    // Ermittle die Kategorie
+    Serial.println("  Ermittle Kategorie Sensor " + String(i));
+    if (getSensorCategoryByAddress(sensor.address, sensor.category) == true) {
+      Serial.println("  Kategorie erfolgreich ermittelt");
+    } else {
+      Serial.println("  Kategorie nicht erfolgreich ermittelt");
+    }
+    Serial.print("  Kategorie Sensor " + String(i) + ": ");
+    Serial.println(sensor.category);
 
     // Ermittle die Konfig
     Serial.println("  Ermittle Config Sensor " + String(i));
@@ -1025,10 +1041,10 @@ void setup1Wire() {
       Serial.println("  Dryrun, erzeuge Dummy-Geräte");
       tft.println("Dryrun, erzeuge Dummy-Geraete");
       dummySensors = true;
-      addSensor("28EE3F8C251601", "Dmy Tmp 1", T_DS18B20, "%2s C", -1,  -1, 0, -1,  -1, 23);
-      addSensor("28FF3F8C251601", "Dmy Tmp 2", T_DS18B20, "%2s C", -1,  -1, 0, -1,  -1, 40);
-      addSensor("33EB3F8C251601", "Dmy Lvl 1", T_DS2438,  "%2s %%", 0, 120, 0,  0, 100, 25);
-      addSensor("33EA3F8C251601", "Dmy Lvl 2", T_DS2438,  "%2s %%", 0, 100, 0,  0,   2, 1.5);
+      addSensor("28EE3F8C251601", "Dmy Tmp 1", T_DS18B20, K_DS18B20, "%2s C", -1,  -1, 0, -1,  -1, "",            23);
+      addSensor("28FF3F8C251601", "Dmy Tmp 2", T_DS18B20, K_DS18B20, "%2s C", -1,  -1, 0, -1,  -1, "",            40);
+      addSensor("33EB3F8C251601", "Dmy Lvl 1", T_DS2438,  K_DS2438,  "%2s %%", 0, 120, 0,  0, 100, "0=0;100=120", 25);
+      addSensor("33EA3F8C251601", "Dmy Lvl 2", T_DS2438,  K_DS2438,  "%2s %%", 0, 100, 0,  0,   2, "0=0;100=2",   1.5);
     }
   #endif
 
