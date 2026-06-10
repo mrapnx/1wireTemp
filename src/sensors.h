@@ -43,6 +43,7 @@ struct SensorConfig {
   SensorValuePrecision  precision       = 0;         // Dezimalstellen des Wertes
   SensorValueMin        min             = -1;        // Minimum des Messwertes 
   SensorValueMax        max             = -1;        // Minimum des Messwertes
+  char                  interpolation   [101] = "";  // Interpolationspunkte: "sensorval1=level1;sensorval2=level2"
 };
 
 struct PersistantSensorConfig {
@@ -100,17 +101,115 @@ bool strToDeviceAddress(const String &str, DeviceAddress &addr);
 bool getSensorCategoryByAddress(const SensorAddress manufacturerCode, SensorCategory &sensorCategory);
 bool getSensorTypeByAddress(const SensorAddress manufacturerCode, SensorType &sensorType);
 void copyDeviceAddress(const DeviceAddress in, DeviceAddress out);
+float interpolateFromPairs(const char* interpolationString, const float sensorValue);
 void sensorValueToDisplay(const float sensorValue, const SensorValueFormat formatString, const SensorValueFormatMin formatMin, const SensorValueFormatMax formatMax, const SensorValuePrecision precision, const SensorValueMin min, const SensorValueMax max, char displayValue[30]);
 void sensorValueToDisplay(const Sensor sensor, char displayValue[30]);
 
 // ***************  Funktionen
+
+// Interpoliert einen Wert basierend auf Paaren im Format "val1=level1;val2=level2;..."
+// Beispiel: "0=0;50=120;100=240" mit sensorValue=75 => 180
+float interpolateFromPairs(const char* interpolationString, const float sensorValue) {
+  Serial.println("interpolateFromPairs() begin");
+  Serial.print("  interpolationString: ");
+  Serial.println(interpolationString);
+  Serial.print("  sensorValue: ");
+  Serial.println(sensorValue);
+
+  if (strlen(interpolationString) == 0) {
+    Serial.println("  Interpolationstring ist leer, gebe sensorValue zurück");
+    Serial.println("interpolateFromPairs() end");
+    return sensorValue;
+  }
+
+  // Erstelle eine lokale Kopie des Strings zum Parsen
+  char tempString[101];
+  strncpy(tempString, interpolationString, 100);
+  tempString[100] = '\0';
+
+  // Parse alle Paare
+  float pairValues[50][2];      // Max. 50 Paare
+  int pairCount = 0;
+  char* token = strtok(tempString, ";");
+  
+  while (token != nullptr && pairCount < 50) {
+    // Token ist im Format "sensorval=level"
+    char* eqPos = strchr(token, '=');
+    if (eqPos != nullptr) {
+      *eqPos = '\0';  // Trenne die beiden Teile
+      float sensorVal = atof(token);
+      float level = atof(eqPos + 1);
+      pairValues[pairCount][0] = sensorVal;
+      pairValues[pairCount][1] = level;
+      pairCount++;
+      Serial.print("  Pair ");
+      Serial.print(pairCount - 1);
+      Serial.print(": sensor=");
+      Serial.print(sensorVal);
+      Serial.print(" level=");
+      Serial.println(level);
+    }
+    token = strtok(nullptr, ";");
+  }
+
+  if (pairCount < 2) {
+    Serial.println("  Weniger als 2 Paare gefunden, gebe sensorValue zurück");
+    Serial.println("interpolateFromPairs() end");
+    return sensorValue;
+  }
+
+  // Finde die zwei Punkte, zwischen denen sensorValue liegt
+  if (sensorValue <= pairValues[0][0]) {
+    Serial.print("  sensorValue <= first point, return ");
+    Serial.println(pairValues[0][1]);
+    Serial.println("interpolateFromPairs() end");
+    return pairValues[0][1];
+  }
+  if (sensorValue >= pairValues[pairCount - 1][0]) {
+    Serial.print("  sensorValue >= last point, return ");
+    Serial.println(pairValues[pairCount - 1][1]);
+    Serial.println("interpolateFromPairs() end");
+    return pairValues[pairCount - 1][1];
+  }
+
+  // Lineare Interpolation zwischen zwei Punkten
+  for (int i = 0; i < pairCount - 1; i++) {
+    if (sensorValue >= pairValues[i][0] && sensorValue <= pairValues[i + 1][0]) {
+      float x1 = pairValues[i][0];
+      float y1 = pairValues[i][1];
+      float x2 = pairValues[i + 1][0];
+      float y2 = pairValues[i + 1][1];
+      
+      // Lineare Interpolation: y = y1 + (y2-y1) * (x-x1) / (x2-x1)
+      float interpolated = y1 + (y2 - y1) * (sensorValue - x1) / (x2 - x1);
+      Serial.print("  Interpoliert zwischen Punkt ");
+      Serial.print(i);
+      Serial.print(" und ");
+      Serial.print(i + 1);
+      Serial.print(", result=");
+      Serial.println(interpolated);
+      Serial.println("interpolateFromPairs() end");
+      return interpolated;
+    }
+  }
+
+  Serial.println("  Keine passenden Punkte gefunden, gebe sensorValue zurück");
+  Serial.println("interpolateFromPairs() end");
+  return sensorValue;
+}
+
 void sensorValueToDisplay(const Sensor sensor, char displayValue[30]) {
     char stringBuffer[30] = "";
   float calcedValue = -1;
   Serial.println("sensorValueToDisplay() begin");
 
+  // Überprüfe ob Interpolation konfiguriert ist (interpolation string nicht leer)
+  if (strlen(sensor.config.interpolation) > 0) {
+    Serial.println("  Interpolationsmodus");
+    calcedValue = interpolateFromPairs(sensor.config.interpolation, sensor.value);
+  }
   // Wenn min oder max nicht gesetzt sind
-  if (sensor.config.min < 0 || sensor.config.max < 0) {
+  else if (sensor.config.min < 0 || sensor.config.max < 0) {
     // Erfolgt keine Umrechnung, sondern die Übernahme des float Wertes
     Serial.println("  Keine Umrechnung, direkte Anzeige");
     calcedValue = sensor.value;

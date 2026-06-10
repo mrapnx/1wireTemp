@@ -288,6 +288,7 @@ void copyConfig(const Config &from, Config &to) {
            to.sensorConfig[i].config.precision = from.sensorConfig[i].config.precision;
            to.sensorConfig[i].config.min       = from.sensorConfig[i].config.min;
            to.sensorConfig[i].config.max       = from.sensorConfig[i].config.max;
+    strcpy(to.sensorConfig[i].config.interpolation, from.sensorConfig[i].config.interpolation);
   }
   Serial.println("copyConfig() end");
 };
@@ -342,7 +343,9 @@ void printConfig(Config &pconfig) {
     Serial.print(" Min: ");  
     Serial.print(pconfig.sensorConfig[i].config.min);  
     Serial.print(" Max: ");  
-    Serial.println(pconfig.sensorConfig[i].config.max);  
+    Serial.print(pconfig.sensorConfig[i].config.max);  
+    Serial.print(" Interpolation: ");  
+    Serial.println(pconfig.sensorConfig[i].config.interpolation);  
   }
 
   Serial.println("printConfig() end");
@@ -446,6 +449,7 @@ void htmlGetConfig() {
   client.print("        <th>Dezimalstellen</th>");
   client.print("        <th>Sensorwert Min</th>");
   client.print("        <th>Sensorwert Max</th>");
+  client.print("        <th>Interpolation Paare</th>");
   for (int i = 0; i < sensorConfigCount; i++) {
     client.print("        <tr>");  
     client.print("          <td>" + String(i) + "</td>");  
@@ -457,6 +461,7 @@ void htmlGetConfig() {
     client.print("          <td><input type='text' name='sensorValuePrecision" + String(i) + "' value='" + String(config.sensorConfig[i].config.precision) + "'></td>");  
     client.print("          <td><input type='text' name='sensorValueMin"       + String(i) + "' value='" + String(config.sensorConfig[i].config.min)       + "'></td>");  
     client.print("          <td><input type='text' name='sensorValueMax"       + String(i) + "' value='" + String(config.sensorConfig[i].config.max)       + "'></td>");  
+    client.print("          <td><input type='text' name='sensorInterpolation"  + String(i) + "' value='" + String(config.sensorConfig[i].config.interpolation) + "' placeholder='e.g. 0=0;50=100;100=200'></td>");  
     client.print("        </tr>");  
   }
   client.print("      </table>");
@@ -542,6 +547,10 @@ void htmlSetConfig() {
     strcpy(name, "sensorValueMax");
     strcat(name, no);
     config.sensorConfig[i].config.max = atof(getValue(body, name)); // Umwandlung nach Float
+
+    strcpy(name, "sensorInterpolation");
+    strcat(name, no);
+    strcpy(config.sensorConfig[i].config.interpolation, getValue(body, name));
   }
 
   saveConfig();
