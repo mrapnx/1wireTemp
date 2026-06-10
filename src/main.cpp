@@ -554,7 +554,7 @@ void htmlSetConfig() {
   }
 
   saveConfig();
-  Serial.println("htmlSetConfig() begin");
+  Serial.println("htmlSetConfig() end");
 }
 
 void htmlGetStatus() {
