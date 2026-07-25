@@ -871,7 +871,7 @@ void updateLevels() {
   if (millis() < levelCheckLast + (levelCheckInterval * 1000)) {
     return;
   }
-  Serial.println("updateLevels() begin");
+  Serial.println("updateLevels() begin  NEU");
   levelCheckLast = millis();
 
   for (int i = 0; i < sensors.count; i++) {
@@ -917,6 +917,7 @@ void updateTemperatures() {
   tempCheckLast = millis();
 
   // Aktualisiere die Temperaturdaten
+  Serial.println("  Commit 5c483900812c10febc093de314073fd72e3cf857 aus März 24");
   Serial.println("  Aktualisiere Temperaturen");
   dallasSensors.requestTemperatures();
 
